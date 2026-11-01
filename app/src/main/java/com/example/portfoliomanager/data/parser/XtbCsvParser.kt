@@ -8,6 +8,7 @@ import com.example.portfoliomanager.data.model.MarginRequirements
 import com.example.portfoliomanager.data.model.PortfolioData
 import com.example.portfoliomanager.data.model.Position
 import com.example.portfoliomanager.data.model.SectorAllocation
+import com.example.portfoliomanager.data.model.Trade
 import java.io.ByteArrayInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
@@ -166,6 +167,8 @@ class XtbCsvParser : BrokerCsvParser {
         }
 
         val positions = mutableListOf<Position>()
+        val tradesMap = mutableMapOf<String, MutableList<Trade>>()
+
         val headerIdx = openPosRows.indexOfFirst { r ->
             r.size > 4 && (r[0].equals("Product", ignoreCase = true) || r[1].equals("Instrument/Position", ignoreCase = true) || r[2].equals("Ticker", ignoreCase = true))
         }
@@ -179,57 +182,88 @@ class XtbCsvParser : BrokerCsvParser {
             val volIdx = headerRow.indexOf("volume").let { if (it != -1) it else 5 }
             val valIdx = headerRow.indexOf("value").let { if (it != -1) it else 6 }
             val openPriceIdx = headerRow.indexOf("open price").let { if (it != -1) it else 8 }
+            val openTimeIdx = headerRow.indexOfFirst { it.contains("open time") || it == "time" || it == "date" }.let { if (it != -1) it else 9 }
             val netPnlIdx = headerRow.indexOf("net profit").let { if (it != -1) it else 13 }
             val netPnlPctIdx = headerRow.indexOf("net profit %").let { if (it != -1) it else 12 }
+            val commIdx = headerRow.indexOfFirst { it.contains("commission") || it == "fee" }.let { if (it != -1) it else 16 }
+
+            var currentTicker = ""
 
             for (r in openPosRows.drop(headerIdx + 1)) {
                 if (r.size <= maxOf(tickerIdx, volIdx, valIdx)) continue
 
-                val typeVal = r.getOrElse(typeIdx) { "" }
-                // XTB summary rows have empty 'Type' (individual lot rows have 'BUY' or 'SELL')
-                if (typeVal.isNotBlank()) continue
-
-                val ticker = r.getOrElse(tickerIdx) { "" }.trim()
-                val name = r.getOrElse(nameIdx) { "" }.ifBlank { ticker }
-                if (ticker.isBlank()) continue
-
-                val catStr = r.getOrElse(catIdx) { "" }
+                val typeVal = r.getOrElse(typeIdx) { "" }.trim()
+                val ticker = r.getOrElse(tickerIdx) { "" }.trim().ifBlank { currentTicker }
                 val vol = r.getOrElse(volIdx) { "" }.toDoubleOrNull() ?: 0.0
-                val marketValue = r.getOrElse(valIdx) { "" }.toDoubleOrNull() ?: 0.0
                 val openPrice = r.getOrElse(openPriceIdx) { "" }.toDoubleOrNull() ?: 0.0
-                val netPnl = r.getOrElse(netPnlIdx) { "" }.toDoubleOrNull() ?: 0.0
-                val netPnlPct = r.getOrElse(netPnlPctIdx) { "" }.toDoubleOrNull()
 
-                if (vol <= 0.0 && marketValue <= 0.0) continue
+                if (typeVal.isBlank()) {
+                    // Summary row for position
+                    if (ticker.isBlank()) continue
+                    currentTicker = ticker
 
-                val assetCategory = mapXtbCategory(catStr, ticker)
-                val markPrice = if (vol > 0.0) marketValue / vol else openPrice
-                val costBasisTotal = openPrice * vol
-                val pnlPercentage = netPnlPct ?: if (costBasisTotal != 0.0) (netPnl / costBasisTotal) * 100.0 else 0.0
+                    val name = r.getOrElse(nameIdx) { "" }.ifBlank { ticker }
+                    val catStr = r.getOrElse(catIdx) { "" }
+                    val marketValue = r.getOrElse(valIdx) { "" }.toDoubleOrNull() ?: 0.0
+                    val netPnl = r.getOrElse(netPnlIdx) { "" }.toDoubleOrNull() ?: 0.0
+                    val netPnlPct = r.getOrElse(netPnlPctIdx) { "" }.toDoubleOrNull()
 
-                val position = Position(
-                    id = "xtb_pos_${positions.size + 1}_$ticker",
-                    symbol = ticker,
-                    description = name,
-                    assetCategory = assetCategory,
-                    quantity = vol,
-                    costBasisPrice = openPrice,
-                    markPrice = markPrice,
-                    marketValue = marketValue,
-                    dailyPnl = 0.0,
-                    totalPnl = netPnl,
-                    pnlPercentage = pnlPercentage,
-                    sector = getSectorForSymbol(ticker, assetCategory),
-                    country = getCountryForSymbol(ticker)
-                )
-                positions.add(position)
+                    if (vol <= 0.0 && marketValue <= 0.0) continue
+
+                    val assetCategory = mapXtbCategory(catStr, ticker)
+                    val markPrice = if (vol > 0.0) marketValue / vol else openPrice
+                    val costBasisTotal = openPrice * vol
+                    val pnlPercentage = netPnlPct ?: if (costBasisTotal != 0.0) (netPnl / costBasisTotal) * 100.0 else 0.0
+
+                    val position = Position(
+                        id = "xtb_pos_${positions.size + 1}_$ticker",
+                        symbol = ticker,
+                        description = name,
+                        assetCategory = assetCategory,
+                        quantity = vol,
+                        costBasisPrice = openPrice,
+                        markPrice = markPrice,
+                        marketValue = marketValue,
+                        dailyPnl = 0.0,
+                        totalPnl = netPnl,
+                        pnlPercentage = pnlPercentage,
+                        sector = getSectorForSymbol(ticker, assetCategory),
+                        country = getCountryForSymbol(ticker)
+                    )
+                    positions.add(position)
+                } else {
+                    // Lot row (Trade) e.g., BUY / SELL
+                    if (ticker.isBlank()) continue
+                    val positionId = r.getOrElse(nameIdx) { "" }.trim()
+                    val tradeId = if (positionId.isNotBlank()) "xtb_trade_$positionId" else "xtb_trade_${ticker}_${tradesMap.values.sumOf { it.size } + 1}"
+                    val rawDate = r.getOrElse(openTimeIdx) { "" }
+                    val formattedDate = parseExcelDate(rawDate)
+                    val commission = r.getOrElse(commIdx) { "" }.toDoubleOrNull() ?: 0.0
+
+                    val trade = Trade(
+                        id = tradeId,
+                        symbol = ticker,
+                        date = formattedDate,
+                        buySell = typeVal.uppercase(),
+                        quantity = vol,
+                        price = openPrice,
+                        commission = commission,
+                        totalAmount = openPrice * vol
+                    )
+                    tradesMap.getOrPut(ticker.uppercase()) { mutableListOf() }.add(trade)
+                }
             }
         }
 
-        val totalMarketValue = positions.sumOf { it.marketValue }
+        val positionsWithTrades = positions.map { pos ->
+            val symbolTrades = tradesMap[pos.symbol.uppercase()] ?: emptyList()
+            pos.copy(trades = symbolTrades)
+        }
+
+        val totalMarketValue = positionsWithTrades.sumOf { it.marketValue }
         val netLiquidation = totalMarketValue + totalCash
-        val totalPnl = positions.sumOf { it.totalPnl }
-        val totalCostBasis = positions.sumOf { it.costBasisPrice * it.quantity }
+        val totalPnl = positionsWithTrades.sumOf { it.totalPnl }
+        val totalCostBasis = positionsWithTrades.sumOf { it.costBasisPrice * it.quantity }
         val totalPnlPct = if (totalCostBasis > 0.0) (totalPnl / totalCostBasis) * 100.0 else 0.0
 
         return PortfolioData(
@@ -256,9 +290,9 @@ class XtbCsvParser : BrokerCsvParser {
                 netLiquidation = netLiquidation
             ),
             marginSummary = MarginRequirements(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
-            positions = positions,
-            sectorAllocations = calculateSectorAllocations(positions),
-            geographyAllocations = calculateGeographyAllocations(positions),
+            positions = positionsWithTrades,
+            sectorAllocations = calculateSectorAllocations(positionsWithTrades),
+            geographyAllocations = calculateGeographyAllocations(positionsWithTrades),
             isMockData = false,
             referenceCode = "XTB-XLSX-IMPORT"
         )
@@ -589,5 +623,17 @@ class XtbCsvParser : BrokerCsvParser {
             "Broad ETF" -> "#00BCD4"
             else -> "#607D8B"
         }
+    }
+
+    private fun parseExcelDate(value: String): String {
+        if (value.isBlank()) return ""
+        val doubleVal = value.toDoubleOrNull()
+        if (doubleVal != null && doubleVal > 10000.0) {
+            val millis = ((doubleVal - 25569.0) * 86400000.0).toLong()
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
+            sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+            return sdf.format(java.util.Date(millis))
+        }
+        return value
     }
 }

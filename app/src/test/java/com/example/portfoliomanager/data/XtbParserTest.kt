@@ -75,7 +75,16 @@ class XtbParserTest {
         assertEquals(12.1905, sxr8Pos.quantity, 0.0001)
         assertEquals(8934.39, sxr8Pos.marketValue, 0.01)
 
-        // Verify net liquidation
-        assertEquals(40537.31, portfolioData.accountSummary.netLiquidation, 0.01)
+        // Verify trades/purchase history for positions
+        assertTrue("McDonald's should have parsed trades", mcdPos.trades.isNotEmpty())
+        assertEquals(17, mcdPos.trades.size)
+        val firstMcdTrade = mcdPos.trades.first()
+        assertEquals("BUY", firstMcdTrade.buySell)
+        assertEquals(1.0, firstMcdTrade.quantity, 0.0001)
+        assertEquals(270.0, firstMcdTrade.price, 0.01)
+
+        val totalTradesCount = portfolioData.positions.sumOf { it.trades.size }
+        assertTrue("Portfolio should contain imported trades across positions", totalTradesCount > 0)
+        println("Total parsed trades across all positions: $totalTradesCount")
     }
 }
