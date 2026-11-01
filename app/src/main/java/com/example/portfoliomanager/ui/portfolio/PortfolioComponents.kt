@@ -1198,18 +1198,35 @@ fun PositionCard(
                     HorizontalDivider(color = CardBorderColor, thickness = 1.dp)
                     Spacer(modifier = Modifier.height(10.dp))
 
+                    var isTradesExpanded by remember { mutableStateOf(false) }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "História nákupov (${position.trades.size})",
-                            style = MaterialTheme.typography.titleSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { isTradesExpanded = !isTradesExpanded }
+                                .padding(vertical = 4.dp, horizontal = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isTradesExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                                contentDescription = "Toggle Trade History",
+                                tint = TextSecondary,
+                                modifier = Modifier.size(20.dp)
                             )
-                        )
+                            Text(
+                                text = "História nákupov (${position.trades.size})",
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                            )
+                        }
 
                         OutlinedButton(
                             onClick = onAddTradeClick,
@@ -1234,80 +1251,86 @@ fun PositionCard(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    if (position.trades.isEmpty()) {
-                        Text(
-                            text = "Zatiaľ neboli zaevidované žiadne nákupy.",
-                            style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary),
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
-                    } else {
+                    AnimatedVisibility(
+                        visible = isTradesExpanded,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
                         Column(
+                            modifier = Modifier.padding(top = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            position.trades.forEach { trade ->
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = Color(0xFFF8FAFC),
-                                    border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(10.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                            if (position.trades.isEmpty()) {
+                                Text(
+                                    text = "Zatiaľ neboli zaevidované žiadne nákupy.",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary),
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            } else {
+                                position.trades.forEach { trade ->
+                                    val isBuy = trade.buySell.uppercase() == "BUY"
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = InputFieldBg,
+                                        border = BorderStroke(1.dp, CardBorderColor),
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Column {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Surface(
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    color = if (trade.buySell.uppercase() == "BUY") Color(0xFFDCFCE7) else Color(0xFFFEE2E2)
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(10.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                                 ) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = if (isBuy) PositiveGreenBg else NegativeRedBg
+                                                    ) {
+                                                        Text(
+                                                            text = if (isBuy) "NÁKUP" else "PREDAJ",
+                                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = if (isBuy) PositiveGreen else NegativeRed
+                                                            ),
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+
                                                     Text(
-                                                        text = if (trade.buySell.uppercase() == "BUY") "NÁKUP" else "PREDAJ",
-                                                        style = MaterialTheme.typography.labelSmall.copy(
-                                                            fontSize = 10.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = if (trade.buySell.uppercase() == "BUY") Color(0xFF166534) else Color(0xFF991B1B)
-                                                        ),
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        text = trade.date,
+                                                        style = MaterialTheme.typography.labelMedium.copy(
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            color = TextPrimary
+                                                        )
                                                     )
                                                 }
 
+                                                Spacer(modifier = Modifier.height(2.dp))
+
                                                 Text(
-                                                    text = trade.date,
-                                                    style = MaterialTheme.typography.labelMedium.copy(
-                                                        fontWeight = FontWeight.SemiBold,
-                                                        color = TextPrimary
+                                                    text = "${String.format(Locale.US, "%,.2f", trade.quantity)} ks @ ${trade.price.toCurrencyString()}" +
+                                                            if (trade.commission > 0) " (poplatok: ${trade.commission.toCurrencyString()})" else "",
+                                                    style = MaterialTheme.typography.bodySmall.copy(
+                                                        color = TextSecondary,
+                                                        fontSize = 12.sp
                                                     )
                                                 )
                                             }
 
-                                            Spacer(modifier = Modifier.height(2.dp))
-
                                             Text(
-                                                text = "${String.format(Locale.US, "%,.2f", trade.quantity)} ks @ ${trade.price.toCurrencyString()}" +
-                                                        if (trade.commission > 0) " (poplatok: ${trade.commission.toCurrencyString()})" else "",
-                                                style = MaterialTheme.typography.bodySmall.copy(
-                                                    color = TextSecondary,
-                                                    fontSize = 12.sp
+                                                text = trade.totalAmount.toCurrencyString(),
+                                                style = MaterialTheme.typography.titleSmall.copy(
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TextPrimary
                                                 )
                                             )
                                         }
-
-                                        Text(
-                                            text = trade.totalAmount.toCurrencyString(),
-                                            style = MaterialTheme.typography.titleSmall.copy(
-                                                fontWeight = FontWeight.Bold,
-                                                color = TextPrimary
-                                            )
-                                        )
                                     }
                                 }
                             }
