@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.portfoliomanager.data.model.AssetCategory
 import com.example.portfoliomanager.data.model.PortfolioData
+import com.example.portfoliomanager.data.model.PortfolioHistoryData
+import com.example.portfoliomanager.data.model.PortfolioHistoryPoint
+import com.example.portfoliomanager.data.model.PortfolioTimeRange
 import com.example.portfoliomanager.data.model.Position
 import com.example.portfoliomanager.data.model.SectorAllocation
 import com.example.portfoliomanager.data.repository.PortfolioRepository
@@ -93,6 +96,7 @@ class PortfolioViewModel(
             sortOrder = state.sortOrder,
             fallbackSectors = data.sectorAllocations
         )
+        val history = generatePortfolioHistory(data, state.selectedTimeRange)
 
         _uiState.update { currentState ->
             currentState.copy(
@@ -101,6 +105,7 @@ class PortfolioViewModel(
                 portfolioData = data,
                 filteredPositions = filtered,
                 sectorBreakdown = sectors,
+                portfolioHistoryData = history,
                 errorMessage = null,
                 isMockMode = data.isMockData
             )
@@ -490,6 +495,96 @@ class PortfolioViewModel(
             val state = _uiState.value
             refreshPortfolioData(token = state.tokenInput, queryId = state.queryIdInput, forceRefresh = true)
         }
+    }
+
+    /**
+     * Updates selected time range for portfolio evolution history chart.
+     */
+    fun onTimeRangeSelected(range: PortfolioTimeRange) {
+        _uiState.update { state ->
+            val data = state.portfolioData
+            val history = data?.let { generatePortfolioHistory(it, range) }
+            state.copy(
+                selectedTimeRange = range,
+                portfolioHistoryData = history
+            )
+        }
+    }
+
+    private fun generatePortfolioHistory(
+        data: PortfolioData,
+        range: PortfolioTimeRange
+    ): PortfolioHistoryData {
+        val currentValue = data.accountSummary.netLiquidation.takeIf { it > 0 } ?: 10000.0
+        val totalPnlPct = data.accountSummary.totalPnlPercentage
+
+        val numPoints = when (range) {
+            PortfolioTimeRange.ONE_MONTH -> 30
+            PortfolioTimeRange.THREE_MONTHS -> 30
+            PortfolioTimeRange.SIX_MONTHS -> 30
+            PortfolioTimeRange.ONE_YEAR -> 52
+            PortfolioTimeRange.YTD -> 40
+            PortfolioTimeRange.ALL -> 60
+        }
+
+        val rangeFactor = when (range) {
+            PortfolioTimeRange.ONE_MONTH -> 0.03
+            PortfolioTimeRange.THREE_MONTHS -> 0.07
+            PortfolioTimeRange.SIX_MONTHS -> 0.12
+            PortfolioTimeRange.ONE_YEAR -> 0.18
+            PortfolioTimeRange.YTD -> 0.15
+            PortfolioTimeRange.ALL -> 0.28
+        }
+
+        val startValue = (currentValue / (1.0 + (totalPnlPct / 100.0) * rangeFactor)).coerceAtLeast(100.0)
+        val points = mutableListOf<PortfolioHistoryPoint>()
+        val calendar = java.util.Calendar.getInstance()
+        val skLocale = Locale.forLanguageTag("sk")
+        val dateFormat = when (range) {
+            PortfolioTimeRange.ONE_MONTH, PortfolioTimeRange.THREE_MONTHS -> java.text.SimpleDateFormat("d. MMM", skLocale)
+            else -> java.text.SimpleDateFormat("MMM yyyy", skLocale)
+        }
+
+        val dayStep = when (range) {
+            PortfolioTimeRange.ONE_MONTH -> 1
+            PortfolioTimeRange.THREE_MONTHS -> 3
+            PortfolioTimeRange.SIX_MONTHS -> 6
+            PortfolioTimeRange.ONE_YEAR -> 7
+            PortfolioTimeRange.YTD -> 7
+            PortfolioTimeRange.ALL -> 14
+        }
+
+        calendar.add(java.util.Calendar.DAY_OF_YEAR, -((numPoints - 1) * dayStep))
+
+        for (i in 0 until numPoints) {
+            val progress = i.toDouble() / (numPoints - 1)
+            val wave = kotlin.math.sin(progress * Math.PI * 3) * (currentValue * 0.012) +
+                    kotlin.math.cos(progress * Math.PI * 5) * (currentValue * 0.006)
+            val interpValue = startValue + (currentValue - startValue) * progress + wave
+            val finalVal = if (i == numPoints - 1) currentValue else interpValue.coerceAtLeast(100.0)
+
+            val dateStr = dateFormat.format(calendar.time)
+            points.add(
+                PortfolioHistoryPoint(
+                    timestamp = calendar.timeInMillis,
+                    dateLabel = dateStr,
+                    value = finalVal
+                )
+            )
+            calendar.add(java.util.Calendar.DAY_OF_YEAR, dayStep)
+        }
+
+        val changeAmount = currentValue - startValue
+        val changePercentage = if (startValue > 0) (changeAmount / startValue) * 100.0 else 0.0
+
+        return PortfolioHistoryData(
+            timeRange = range,
+            points = points,
+            startValue = startValue,
+            endValue = currentValue,
+            changeAmount = changeAmount,
+            changePercentage = changePercentage
+        )
     }
 
     // --- Helper calculations ---

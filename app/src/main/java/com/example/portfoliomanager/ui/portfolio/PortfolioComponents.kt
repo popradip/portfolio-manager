@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -77,6 +78,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -93,6 +98,9 @@ import com.example.portfoliomanager.data.model.AccountSummary
 import com.example.portfoliomanager.data.model.Balances
 import com.example.portfoliomanager.data.model.GeographyAllocation
 import com.example.portfoliomanager.data.model.MarginRequirements
+import com.example.portfoliomanager.data.model.PortfolioHistoryData
+import com.example.portfoliomanager.data.model.PortfolioHistoryPoint
+import com.example.portfoliomanager.data.model.PortfolioTimeRange
 import com.example.portfoliomanager.data.model.Position
 import com.example.portfoliomanager.data.model.SectorAllocation
 import com.example.portfoliomanager.ui.theme.ActiveLimePill
@@ -112,6 +120,7 @@ import com.example.portfoliomanager.ui.theme.UnselectedPillText
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 // --- Format Utilities ---
 
@@ -359,6 +368,23 @@ fun AccountSummaryCard(
             val currency = accountSummary?.currency ?: "EUR"
             val isPositive = dailyPnl >= 0
 
+            val sparklinePoints = remember(netLiquidation, dailyPnl) {
+                val startVal = netLiquidation - dailyPnl
+                if (kotlin.math.abs(dailyPnl) < 0.01) {
+                    listOf(netLiquidation, netLiquidation)
+                } else {
+                    listOf(
+                        startVal,
+                        startVal + dailyPnl * 0.15,
+                        startVal + dailyPnl * 0.35,
+                        startVal + dailyPnl * 0.25,
+                        startVal + dailyPnl * 0.65,
+                        startVal + dailyPnl * 0.85,
+                        netLiquidation
+                    )
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -402,14 +428,15 @@ fun AccountSummaryCard(
                     }
                 }
 
-                val sampleSparkline = listOf(1230000.0, 1235000.0, 1232000.0, 1240000.0, 1238000.0, 1245890.50)
-                SparklineCanvas(
-                    points = sampleSparkline,
-                    lineColor = if (isPositive) PositiveGreen else NegativeRed,
-                    modifier = Modifier
-                        .width(90.dp)
-                        .height(36.dp)
-                )
+                if (sparklinePoints.size >= 2) {
+                    SparklineCanvas(
+                        points = sparklinePoints,
+                        lineColor = if (isPositive) PositiveGreen else NegativeRed,
+                        modifier = Modifier
+                            .width(90.dp)
+                            .height(36.dp)
+                    )
+                }
             }
         }
     }
@@ -419,6 +446,357 @@ fun AccountSummaryCard(
 private fun rememberTimeStr(): String {
     val sdf = remember { SimpleDateFormat("hh:mm:ss a", Locale.US) }
     return sdf.format(Date())
+}
+
+// --- Portfolio Evolution Chart Card ---
+
+@Composable
+fun PortfolioEvolutionChartCard(
+    historyData: PortfolioHistoryData?,
+    selectedTimeRange: PortfolioTimeRange,
+    onTimeRangeSelected: (PortfolioTimeRange) -> Unit,
+    dailyPnl: Double = 0.0,
+    dailyPnlPercentage: Double = 0.0,
+    currency: String = "EUR",
+    modifier: Modifier = Modifier
+) {
+    var activePoint by remember(historyData) { mutableStateOf<PortfolioHistoryPoint?>(null) }
+    val points = historyData?.points ?: emptyList()
+
+    val activeIdx = if (activePoint != null && points.isNotEmpty()) points.indexOf(activePoint) else -1
+
+    val dayChangeAmount = when {
+        activePoint == null -> dailyPnl
+        activeIdx > 0 -> activePoint!!.value - points[activeIdx - 1].value
+        else -> 0.0
+    }
+
+    val dayChangePct = when {
+        activePoint == null -> dailyPnlPercentage
+        activeIdx > 0 && points[activeIdx - 1].value > 0 -> (dayChangeAmount / points[activeIdx - 1].value) * 100.0
+        else -> 0.0
+    }
+
+    val isDayPositive = dayChangeAmount >= 0
+
+    val rangeChangeAmount = historyData?.changeAmount ?: 0.0
+    val rangeChangePercentage = historyData?.changePercentage ?: 0.0
+    val isRangePositive = rangeChangeAmount >= 0
+
+    val displayValue = activePoint?.value ?: historyData?.endValue ?: 0.0
+
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp)
+        ) {
+            // Header Row: Title & Active Point Date Label
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFE2E8F0)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.TrendingUp,
+                            contentDescription = null,
+                            tint = DarkPill,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Text(
+                        text = "Vývoj hodnoty portfólia",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFF1F5F9)
+                ) {
+                    Text(
+                        text = activePoint?.dateLabel ?: "Dnes",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = DarkPill
+                        ),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Value & Time Range Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = displayValue.toCurrencyString(currency),
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 26.sp,
+                        color = TextPrimary
+                    )
+                )
+
+                // Time Range Selector Pills
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    PortfolioTimeRange.entries.forEach { range ->
+                        val isSelected = range == selectedTimeRange
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSelected) DarkPill else Color(0xFFF1F5F9),
+                            modifier = Modifier.clickable { onTimeRangeSelected(range) }
+                        ) {
+                            Text(
+                                text = range.label,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 11.sp,
+                                    color = if (isSelected) Color.White else TextSecondary
+                                ),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Changes Row (Daily P&L + Selected Range P&L)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Daily Change Pill
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isDayPositive) PositiveGreenBg else NegativeRedBg
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isDayPositive) Icons.AutoMirrored.Rounded.TrendingUp else Icons.Rounded.ArrowDownward,
+                            contentDescription = null,
+                            tint = if (isDayPositive) PositiveGreen else NegativeRed,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "Dnes: ${dayChangeAmount.toSignedCurrencyString(currency)} (${dayChangePct.toPercentageString()})",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                color = if (isDayPositive) PositiveGreen else NegativeRed
+                            )
+                        )
+                    }
+                }
+
+                // Range Change Pill
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isRangePositive) PositiveGreenBg else NegativeRedBg
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "${selectedTimeRange.label}: ${rangeChangeAmount.toSignedCurrencyString(currency)} (${rangeChangePercentage.toPercentageString()})",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                color = if (isRangePositive) PositiveGreen else NegativeRed
+                            )
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Chart Canvas
+            val chartColor = if (isRangePositive) PositiveGreen else NegativeRed
+            val indicatorColor = DarkPill.copy(alpha = 0.4f)
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp)
+            ) {
+                if (points.size >= 2) {
+                    val minVal = points.minOf { it.value }
+                    val maxVal = points.maxOf { it.value }
+                    val range = (maxVal - minVal).coerceAtLeast(0.01)
+
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(points) {
+                                detectDragGestures(
+                                    onDragStart = { offset ->
+                                        val xRatio = (offset.x / size.width).coerceIn(0f, 1f)
+                                        val idx = (xRatio * (points.size - 1)).roundToInt().coerceIn(0, points.size - 1)
+                                        activePoint = points[idx]
+                                    },
+                                    onDrag = { change, _ ->
+                                        val xRatio = (change.position.x / size.width).coerceIn(0f, 1f)
+                                        val idx = (xRatio * (points.size - 1)).roundToInt().coerceIn(0, points.size - 1)
+                                        activePoint = points[idx]
+                                    },
+                                    onDragEnd = { activePoint = null },
+                                    onDragCancel = { activePoint = null }
+                                )
+                            }
+                            .pointerInput(points) {
+                                detectTapGestures { offset ->
+                                    val xRatio = (offset.x / size.width).coerceIn(0f, 1f)
+                                    val idx = (xRatio * (points.size - 1)).roundToInt().coerceIn(0, points.size - 1)
+                                    activePoint = points[idx]
+                                }
+                            }
+                    ) {
+                        val w = size.width
+                        val h = size.height
+                        val stepX = w / (points.size - 1)
+
+                        val path = Path()
+                        val fillPath = Path()
+
+                        points.forEachIndexed { idx, pt ->
+                            val x = idx * stepX
+                            val normY = ((pt.value - minVal) / range).toFloat()
+                            val y = h - (normY * (h - 20.dp.toPx())) - 10.dp.toPx()
+
+                            if (idx == 0) {
+                                path.moveTo(x, y)
+                                fillPath.moveTo(x, h)
+                                fillPath.lineTo(x, y)
+                            } else {
+                                val prevX = (idx - 1) * stepX
+                                val prevPt = points[idx - 1]
+                                val prevNormY = ((prevPt.value - minVal) / range).toFloat()
+                                val prevY = h - (prevNormY * (h - 20.dp.toPx())) - 10.dp.toPx()
+
+                                val ctrlX1 = prevX + (stepX / 2f)
+                                val ctrlY1 = prevY
+                                val ctrlX2 = prevX + (stepX / 2f)
+                                val ctrlY2 = y
+
+                                path.cubicTo(ctrlX1, ctrlY1, ctrlX2, ctrlY2, x, y)
+                                fillPath.cubicTo(ctrlX1, ctrlY1, ctrlX2, ctrlY2, x, y)
+                            }
+
+                            if (idx == points.size - 1) {
+                                fillPath.lineTo(x, h)
+                                fillPath.close()
+                            }
+                        }
+
+                        // Draw gradient fill under curve
+                        drawPath(
+                            path = fillPath,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    chartColor.copy(alpha = 0.25f),
+                                    chartColor.copy(alpha = 0.01f)
+                                )
+                            )
+                        )
+
+                        // Draw smooth line
+                        drawPath(
+                            path = path,
+                            color = chartColor,
+                            style = Stroke(width = 2.5.dp.toPx())
+                        )
+
+                        // If point is touched/hovered, draw vertical indicator and dot
+                        activePoint?.let { active ->
+                            val activeIdx = points.indexOf(active)
+                            if (activeIdx >= 0) {
+                                val activeX = activeIdx * stepX
+                                val normY = ((active.value - minVal) / range).toFloat()
+                                val activeY = h - (normY * (h - 20.dp.toPx())) - 10.dp.toPx()
+
+                                // Vertical dashed line
+                                drawLine(
+                                    color = indicatorColor,
+                                    start = androidx.compose.ui.geometry.Offset(activeX, 0f),
+                                    end = androidx.compose.ui.geometry.Offset(activeX, h),
+                                    strokeWidth = 1.5.dp.toPx(),
+                                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                                )
+
+                                // Outer white ring
+                                drawCircle(
+                                    color = Color.White,
+                                    radius = 7.dp.toPx(),
+                                    center = androidx.compose.ui.geometry.Offset(activeX, activeY)
+                                )
+                                // Inner dot
+                                drawCircle(
+                                    color = chartColor,
+                                    radius = 4.5.dp.toPx(),
+                                    center = androidx.compose.ui.geometry.Offset(activeX, activeY)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Date Range Labels below chart
+            if (points.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = points.first().dateLabel,
+                        style = MaterialTheme.typography.labelSmall.copy(color = TextSecondary)
+                    )
+                    Text(
+                        text = points.last().dateLabel,
+                        style = MaterialTheme.typography.labelSmall.copy(color = TextSecondary)
+                    )
+                }
+            }
+        }
+    }
 }
 
 // --- Expandable Portfolio Statistics Card ---

@@ -1,6 +1,8 @@
 package com.example.portfoliomanager.ui.portfolio
 
 import com.example.portfoliomanager.data.model.PortfolioData
+import com.example.portfoliomanager.data.model.PortfolioHistoryData
+import com.example.portfoliomanager.data.model.PortfolioTimeRange
 import com.example.portfoliomanager.data.model.Position
 import com.example.portfoliomanager.data.model.SectorAllocation
 
@@ -54,6 +56,8 @@ data class PortfolioUiState(
     val selectedBreakdownTab: BreakdownTab = BreakdownTab.INDUSTRY,
     val selectedMarginTab: MarginTab = MarginTab.OVERNIGHT,
     val selectedBottomNavTab: BottomNavTab = BottomNavTab.HOME,
+    val selectedTimeRange: PortfolioTimeRange = PortfolioTimeRange.ONE_YEAR,
+    val portfolioHistoryData: PortfolioHistoryData? = null,
     val isBalancesExpanded: Boolean = true,
     val isMarginExpanded: Boolean = false,
     val expandedPositionIds: Set<String> = emptySet(),

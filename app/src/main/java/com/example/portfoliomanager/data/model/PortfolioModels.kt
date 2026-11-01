@@ -92,6 +92,30 @@ data class GeographyAllocation(
     val percentage: Double
 )
 
+enum class PortfolioTimeRange(val label: String) {
+    ONE_MONTH("1M"),
+    THREE_MONTHS("3M"),
+    SIX_MONTHS("6M"),
+    ONE_YEAR("1R"),
+    YTD("YTD"),
+    ALL("ALL")
+}
+
+data class PortfolioHistoryPoint(
+    val timestamp: Long,
+    val dateLabel: String,
+    val value: Double
+)
+
+data class PortfolioHistoryData(
+    val timeRange: PortfolioTimeRange,
+    val points: List<PortfolioHistoryPoint>,
+    val startValue: Double,
+    val endValue: Double,
+    val changeAmount: Double,
+    val changePercentage: Double
+)
+
 data class PortfolioData(
     val accountSummary: AccountSummary,
     val balances: Balances,

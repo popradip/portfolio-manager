@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.portfoliomanager.data.mock.MockPortfolioData
+import com.example.portfoliomanager.data.model.PortfolioTimeRange
 import com.example.portfoliomanager.ui.theme.DarkPill
 import com.example.portfoliomanager.ui.theme.PortfolioBg
 import com.example.portfoliomanager.ui.theme.PortfolioManagerTheme
@@ -54,6 +55,7 @@ fun PortfolioScreen(
         onClearImportedData = viewModel::clearImportedCsvAndReset,
         onRefreshData = { viewModel.refreshPortfolioData(forceRefresh = true) },
         onBottomNavTabSelected = viewModel::onBottomNavTabSelected,
+        onTimeRangeSelected = viewModel::onTimeRangeSelected,
         onOpenAddTradeDialog = viewModel::onOpenAddTradeDialog,
         onDismissAddTradeDialog = viewModel::onDismissAddTradeDialog,
         onAddManualTrade = viewModel::addManualTrade,
@@ -75,6 +77,7 @@ fun PortfolioScreenContent(
     onClearImportedData: () -> Unit = {},
     onRefreshData: () -> Unit = {},
     onBottomNavTabSelected: (BottomNavTab) -> Unit = {},
+    onTimeRangeSelected: (PortfolioTimeRange) -> Unit = {},
     onOpenAddTradeDialog: (com.example.portfoliomanager.data.model.Position) -> Unit = {},
     onDismissAddTradeDialog: () -> Unit = {},
     onAddManualTrade: (positionId: String, quantity: Double, price: Double, date: String, commission: Double) -> Unit = { _, _, _, _, _ -> },
@@ -146,6 +149,18 @@ fun PortfolioScreenContent(
                                 AccountSummaryCard(
                                     accountSummary = portfolioData.accountSummary,
                                     positionsCount = portfolioData.positions.size
+                                )
+                            }
+
+                            // Interactive Portfolio Evolution Chart Card
+                            item {
+                                PortfolioEvolutionChartCard(
+                                    historyData = uiState.portfolioHistoryData,
+                                    selectedTimeRange = uiState.selectedTimeRange,
+                                    onTimeRangeSelected = onTimeRangeSelected,
+                                    dailyPnl = portfolioData.accountSummary.dailyPnl,
+                                    dailyPnlPercentage = portfolioData.accountSummary.dailyPnlPercentage,
+                                    currency = portfolioData.accountSummary.currency
                                 )
                             }
 
