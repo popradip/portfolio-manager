@@ -51,6 +51,7 @@ fun PortfolioScreen(
         onImportCsvClick = { csvPickerLauncher.launch("*/*") },
         onClearImportedData = viewModel::clearImportedCsvAndReset,
         onRefreshData = { viewModel.refreshPortfolioData(forceRefresh = true) },
+        onBottomNavTabSelected = viewModel::onBottomNavTabSelected,
         modifier = modifier
     )
 }
@@ -67,6 +68,7 @@ fun PortfolioScreenContent(
     onImportCsvClick: () -> Unit = {},
     onClearImportedData: () -> Unit = {},
     onRefreshData: () -> Unit = {},
+    onBottomNavTabSelected: (BottomNavTab) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val portfolioData = uiState.portfolioData ?: MockPortfolioData.getSamplePortfolio()
@@ -75,7 +77,8 @@ fun PortfolioScreenContent(
         contentWindowInsets = WindowInsets.systemBars,
         bottomBar = {
             PortfolioBottomNavBar(
-                onFabClick = { onToggleSettingsDialog(true) }
+                selectedTab = uiState.selectedBottomNavTab,
+                onTabSelected = onBottomNavTabSelected
             )
         },
         containerColor = PortfolioBg,
@@ -122,44 +125,50 @@ fun PortfolioScreenContent(
                         }
                     }
 
-                    // Account Summary & Net Liquidity Card
-                    item {
-                        AccountSummaryCard(
-                            accountSummary = portfolioData.accountSummary,
-                            positionsCount = portfolioData.positions.size
-                        )
-                    }
+                    when (uiState.selectedBottomNavTab) {
+                        BottomNavTab.HOME -> {
+                            // Account Summary & Net Liquidity Card
+                            item {
+                                AccountSummaryCard(
+                                    accountSummary = portfolioData.accountSummary,
+                                    positionsCount = portfolioData.positions.size
+                                )
+                            }
 
-                    // Expandable Balances Card
-                    item {
-                        ExpandableBalancesCard(
-                            balances = portfolioData.balances,
-                            isExpanded = uiState.isBalancesExpanded,
-                            onToggleExpand = onToggleBalancesExpanded
-                        )
-                    }
+                            // Expandable Balances Card
+                            item {
+                                ExpandableBalancesCard(
+                                    balances = portfolioData.balances,
+                                    isExpanded = uiState.isBalancesExpanded,
+                                    onToggleExpand = onToggleBalancesExpanded
+                                )
+                            }
 
-                    // Sector / Geography / Industry Analytics Breakdown Card
-                    item {
-                        BreakdownAnalyticsCard(
-                            selectedBreakdownTab = uiState.selectedBreakdownTab,
-                            sectorAllocations = uiState.sectorBreakdown.ifEmpty { portfolioData.sectorAllocations },
-                            geographyAllocations = portfolioData.geographyAllocations,
-                            positions = portfolioData.positions
-                        )
-                    }
+                            // Sector / Geography / Industry Analytics Breakdown Card
+                            item {
+                                BreakdownAnalyticsCard(
+                                    selectedBreakdownTab = uiState.selectedBreakdownTab,
+                                    sectorAllocations = uiState.sectorBreakdown.ifEmpty { portfolioData.sectorAllocations },
+                                    geographyAllocations = portfolioData.geographyAllocations,
+                                    positions = portfolioData.positions
+                                )
+                            }
+                        }
 
-                    // Holdings / "Your Assets" Section
-                    item {
-                        YourAssetsSection(
-                            positions = uiState.filteredPositions.ifEmpty { portfolioData.positions },
-                            searchQuery = uiState.searchQuery,
-                            selectedCategoryFilter = uiState.selectedCategoryFilter,
-                            expandedPositionIds = uiState.expandedPositionIds,
-                            onSearchQueryChanged = onSearchQueryChanged,
-                            onCategoryFilterSelected = onCategoryFilterSelected,
-                            onTogglePositionExpanded = onTogglePositionExpanded
-                        )
+                        BottomNavTab.ASSETS -> {
+                            // Holdings / "Your Assets" Section
+                            item {
+                                YourAssetsSection(
+                                    positions = uiState.filteredPositions.ifEmpty { portfolioData.positions },
+                                    searchQuery = uiState.searchQuery,
+                                    selectedCategoryFilter = uiState.selectedCategoryFilter,
+                                    expandedPositionIds = uiState.expandedPositionIds,
+                                    onSearchQueryChanged = onSearchQueryChanged,
+                                    onCategoryFilterSelected = onCategoryFilterSelected,
+                                    onTogglePositionExpanded = onTogglePositionExpanded
+                                )
+                            }
+                        }
                     }
                 }
             }

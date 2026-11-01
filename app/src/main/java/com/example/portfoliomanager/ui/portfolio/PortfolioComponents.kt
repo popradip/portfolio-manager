@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,6 +39,7 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Person
@@ -1275,40 +1275,6 @@ fun PositionCard(
                             }
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = { /* Action */ },
-                            shape = RoundedCornerShape(20.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = DarkPill),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Details", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-
-                        Button(
-                            onClick = { /* Buy Action */ },
-                            shape = RoundedCornerShape(20.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = PositiveGreen),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Buy", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-
-                        Button(
-                            onClick = { /* Sell Action */ },
-                            shape = RoundedCornerShape(20.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = NegativeRed),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Sell", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-                    }
                 }
             }
         }
@@ -1563,95 +1529,61 @@ fun ErrorBanner(
 
 @Composable
 fun PortfolioBottomNavBar(
-    modifier: Modifier = Modifier,
-    onFabClick: () -> Unit = {}
+    selectedTab: BottomNavTab,
+    onTabSelected: (BottomNavTab) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Box(
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = DarkPill,
+        shadowElevation = 8.dp,
         modifier = modifier
             .fillMaxWidth()
-            .padding(bottom = 16.dp),
-        contentAlignment = Alignment.Center
+            .padding(horizontal = 24.dp, vertical = 12.dp)
     ) {
-        // Soft Cyan Halo Ring
-        Box(
+        Row(
             modifier = Modifier
-                .size(62.dp)
-                .clip(CircleShape)
-                .background(Color(0x3300D2C8))
-        )
-
-        FloatingActionButton(
-            onClick = onFabClick,
-            shape = CircleShape,
-            containerColor = DarkPill,
-            contentColor = Color.White,
-            elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 8.dp),
-            modifier = Modifier.size(52.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Add,
-                contentDescription = "Import CSV",
-                tint = Color.White,
-                modifier = Modifier.size(28.dp)
-            )
-        }
-    }
-}
+            BottomNavTab.entries.forEach { tab ->
+                val isSelected = tab == selectedTab
+                val backgroundColor = if (isSelected) ActiveLimePill else Color.Transparent
+                val contentColor = if (isSelected) ActiveLimePillText else Color.White.copy(alpha = 0.7f)
 
-@Composable
-private fun NavItem(
-    tab: BottomNavTab,
-    isSelected: Boolean,
-    onSelect: () -> Unit
-) {
-    if (isSelected) {
-        Surface(
-            onClick = onSelect,
-            shape = RoundedCornerShape(24.dp),
-            color = ActiveLimePill,
-            modifier = Modifier.height(40.dp)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Icon(
-                    imageVector = getTabIcon(tab),
-                    contentDescription = tab.displayName,
-                    tint = ActiveLimePillText,
-                    modifier = Modifier.size(18.dp)
-                )
-                Text(
-                    text = tab.displayName,
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = ActiveLimePillText,
-                        fontSize = 12.sp
-                    ),
-                    maxLines = 1
-                )
+                Surface(
+                    onClick = { onTabSelected(tab) },
+                    shape = RoundedCornerShape(22.dp),
+                    color = backgroundColor,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = when (tab) {
+                                BottomNavTab.HOME -> Icons.Rounded.Home
+                                BottomNavTab.ASSETS -> Icons.AutoMirrored.Rounded.List
+                            },
+                            contentDescription = tab.displayName,
+                            tint = contentColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = tab.displayName,
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                color = contentColor
+                            )
+                        )
+                    }
+                }
             }
         }
-    } else {
-        IconButton(
-            onClick = onSelect,
-            modifier = Modifier.size(40.dp)
-        ) {
-            Icon(
-                imageVector = getTabIcon(tab),
-                contentDescription = tab.displayName,
-                tint = TextSecondary,
-                modifier = Modifier.size(20.dp)
-            )
-        }
     }
-}
-
-private fun getTabIcon(tab: BottomNavTab) = when (tab) {
-    BottomNavTab.PORTFOLIO_ANALYZER -> Icons.Rounded.Dashboard
-    BottomNavTab.POSITIONS -> Icons.AutoMirrored.Rounded.List
-    BottomNavTab.ANALYTICS -> Icons.Rounded.Analytics
-    BottomNavTab.ACTIVITY -> Icons.Rounded.History
-    BottomNavTab.PROFILE -> Icons.Rounded.Person
 }

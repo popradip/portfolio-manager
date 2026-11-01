@@ -37,11 +37,8 @@ enum class MarginTab(val displayName: String) {
 }
 
 enum class BottomNavTab(val displayName: String) {
-    PORTFOLIO_ANALYZER("Portfolio"),
-    POSITIONS("Positions"),
-    ANALYTICS("Analytics"),
-    ACTIVITY("Activity"),
-    PROFILE("Profile")
+    HOME("Home"),
+    ASSETS("Your Assets")
 }
 
 data class PortfolioUiState(
@@ -56,7 +53,7 @@ data class PortfolioUiState(
     val sortOrder: SortOrder = SortOrder.DESCENDING,
     val selectedBreakdownTab: BreakdownTab = BreakdownTab.INDUSTRY,
     val selectedMarginTab: MarginTab = MarginTab.OVERNIGHT,
-    val selectedBottomNavTab: BottomNavTab = BottomNavTab.PORTFOLIO_ANALYZER,
+    val selectedBottomNavTab: BottomNavTab = BottomNavTab.HOME,
     val isBalancesExpanded: Boolean = false,
     val isMarginExpanded: Boolean = false,
     val expandedPositionIds: Set<String> = emptySet(),
