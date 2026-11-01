@@ -1,0 +1,250 @@
+package com.example.portfoliomanager.ui
+
+import com.example.portfoliomanager.data.mock.MockPortfolioData
+import com.example.portfoliomanager.data.model.AssetCategory
+import com.example.portfoliomanager.data.model.PortfolioData
+import com.example.portfoliomanager.data.repository.PortfolioRepository
+import com.example.portfoliomanager.ui.portfolio.CategoryFilter
+import com.example.portfoliomanager.ui.portfolio.PortfolioViewModel
+import com.example.portfoliomanager.ui.portfolio.PositionSortOption
+import com.example.portfoliomanager.ui.portfolio.SortOrder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.TestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class PortfolioViewModelTest {
+
+    private val testDispatcher: TestDispatcher = UnconfinedTestDispatcher()
+    private lateinit var fakeRepository: FakePortfolioRepository
+    private lateinit var viewModel: PortfolioViewModel
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(testDispatcher)
+        fakeRepository = FakePortfolioRepository()
+        viewModel = PortfolioViewModel(repository = fakeRepository)
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `initialization loads portfolio data and populates state`() {
+        val state = viewModel.uiState.value
+
+        assertFalse(state.isLoading)
+        assertFalse(state.isRefreshing)
+        assertNotNull(state.portfolioData)
+        assertEquals(8, state.filteredPositions.size)
+        assertTrue(state.sectorBreakdown.isNotEmpty())
+        assertNull(state.errorMessage)
+    }
+
+    @Test
+    fun `refreshPortfolioData updates state when repository fails`() {
+        fakeRepository.shouldFail = true
+        viewModel.refreshPortfolioData(forceRefresh = true)
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isLoading)
+        assertFalse(state.isRefreshing)
+        assertEquals("Network error connecting to IBKR API", state.errorMessage)
+    }
+
+    @Test
+    fun `search by query filters positions correctly`() {
+        // Search symbol "AAPL"
+        viewModel.onSearchQueryChanged("AAPL")
+        var state = viewModel.uiState.value
+        // Should match AAPL stock and AAPL call option
+        assertEquals(2, state.filteredPositions.size)
+        assertTrue(state.filteredPositions.all { it.symbol.contains("AAPL", ignoreCase = true) })
+
+        // Search description "Bitcoin"
+        viewModel.onSearchQueryChanged("Bitcoin")
+        state = viewModel.uiState.value
+        assertEquals(1, state.filteredPositions.size)
+        assertEquals("BTC", state.filteredPositions.first().symbol)
+
+        // Search non-existing query
+        viewModel.onSearchQueryChanged("NON_EXISTENT_TICKER")
+        state = viewModel.uiState.value
+        assertTrue(state.filteredPositions.isEmpty())
+    }
+
+    @Test
+    fun `category filter filters positions correctly`() {
+        // Filter by STOCKS
+        viewModel.onCategoryFilterSelected(CategoryFilter.STOCKS)
+        var state = viewModel.uiState.value
+        assertTrue(state.filteredPositions.all { it.assetCategory == AssetCategory.STK })
+
+        // Filter by ETFS
+        viewModel.onCategoryFilterSelected(CategoryFilter.ETFS)
+        state = viewModel.uiState.value
+        assertEquals(1, state.filteredPositions.size)
+        assertEquals(AssetCategory.ETF, state.filteredPositions.first().assetCategory)
+
+        // Filter by ALL
+        viewModel.onCategoryFilterSelected(CategoryFilter.ALL)
+        state = viewModel.uiState.value
+        assertEquals(8, state.filteredPositions.size)
+    }
+
+    @Test
+    fun `sorting positions works as expected`() {
+        // Sort by Market Value Descending (default)
+        viewModel.onSortOptionSelected(PositionSortOption.MARKET_VALUE)
+        viewModel.onSortOrderChanged(SortOrder.DESCENDING)
+        var state = viewModel.uiState.value
+        val topPosition = state.filteredPositions.first()
+        assertEquals("SPY", topPosition.symbol) // SPY market value is 315000.00
+
+        // Sort by Market Value Ascending
+        viewModel.onSortOrderChanged(SortOrder.ASCENDING)
+        state = viewModel.uiState.value
+        assertEquals("pos_6", state.filteredPositions.first().id) // AAPL option is 18500.00
+
+        // Sort by Symbol Ascending
+        viewModel.onSortOptionSelected(PositionSortOption.SYMBOL)
+        viewModel.onSortOrderChanged(SortOrder.ASCENDING)
+        state = viewModel.uiState.value
+        assertEquals("AAPL", state.filteredPositions.first().symbol)
+
+        // Toggle sort order
+        viewModel.toggleSortOrder()
+        state = viewModel.uiState.value
+        assertEquals(SortOrder.DESCENDING, state.sortOrder)
+    }
+
+    @Test
+    fun `expandable UI state toggles correctly`() {
+        // Balances expansion
+        assertFalse(viewModel.uiState.value.isBalancesExpanded)
+        viewModel.toggleBalancesExpanded()
+        assertTrue(viewModel.uiState.value.isBalancesExpanded)
+        viewModel.toggleBalancesExpanded()
+        assertFalse(viewModel.uiState.value.isBalancesExpanded)
+
+        // Margin expansion
+        assertFalse(viewModel.uiState.value.isMarginExpanded)
+        viewModel.toggleMarginExpanded()
+        assertTrue(viewModel.uiState.value.isMarginExpanded)
+
+        // Position expansion
+        assertTrue(viewModel.uiState.value.expandedPositionIds.isEmpty())
+        viewModel.togglePositionExpanded("pos_1")
+        assertTrue(viewModel.uiState.value.expandedPositionIds.contains("pos_1"))
+        viewModel.togglePositionExpanded("pos_2")
+        assertEquals(setOf("pos_1", "pos_2"), viewModel.uiState.value.expandedPositionIds)
+        viewModel.togglePositionExpanded("pos_1")
+        assertEquals(setOf("pos_2"), viewModel.uiState.value.expandedPositionIds)
+    }
+
+    @Test
+    fun `credentials management works correctly`() {
+        viewModel.onTokenInputChanged("MY_SECRET_TOKEN")
+        viewModel.onQueryIdInputChanged("998877")
+
+        assertEquals("MY_SECRET_TOKEN", viewModel.uiState.value.tokenInput)
+        assertEquals("998877", viewModel.uiState.value.queryIdInput)
+
+        viewModel.saveCredentials()
+        assertTrue(fakeRepository.saveCredentialsCalled)
+        assertEquals("MY_SECRET_TOKEN", fakeRepository.storedToken)
+        assertEquals("998877", fakeRepository.storedQueryId)
+        assertEquals("Credentials saved successfully.", viewModel.uiState.value.credentialsSavedMessage)
+
+        viewModel.clearCredentialsMessage()
+        assertNull(viewModel.uiState.value.credentialsSavedMessage)
+    }
+
+    @Test
+    fun `sector breakdown is calculated dynamically from positions`() {
+        val sectors = viewModel.uiState.value.sectorBreakdown
+        assertTrue(sectors.isNotEmpty())
+
+        val techSector = sectors.find { it.sector == "Technology" }
+        assertNotNull(techSector)
+        assertTrue(techSector!!.percentage > 0.0)
+
+        val totalPercentage = sectors.sumOf { it.percentage }
+        assertEquals(100.0, totalPercentage, 1.0)
+    }
+
+    @Test
+    fun `importCsvContent updates uiState with success message`() {
+        val testCsv = "header\ndata"
+        viewModel.importCsvContent(testCsv)
+
+        assertNotNull(viewModel.uiState.value.importSuccessMessage)
+        assertTrue(viewModel.uiState.value.importSuccessMessage!!.contains("Interactive Brokers"))
+        assertFalse(viewModel.uiState.value.isMockMode)
+    }
+}
+
+private class FakePortfolioRepository(
+    var mockData: PortfolioData = MockPortfolioData.getSamplePortfolio(),
+    var shouldFail: Boolean = false,
+    var storedToken: String = "",
+    var storedQueryId: String = ""
+) : PortfolioRepository {
+
+    var saveCredentialsCalled = false
+
+    override suspend fun getPortfolioData(
+        token: String?,
+        queryId: String?,
+        forceRefresh: Boolean
+    ): Result<PortfolioData> {
+        return if (shouldFail) {
+            Result.failure(RuntimeException("Network error connecting to IBKR API"))
+        } else {
+            Result.success(mockData)
+        }
+    }
+
+    override fun getPortfolioDataFlow(
+        token: String?,
+        queryId: String?
+    ): Flow<Result<PortfolioData>> = flow {
+        emit(getPortfolioData(token, queryId, forceRefresh = true))
+    }
+
+    override suspend fun saveIbkrCredentials(token: String, queryId: String) {
+        storedToken = token
+        storedQueryId = queryId
+        saveCredentialsCalled = true
+    }
+
+    override fun getIbkrCredentials(): Flow<Pair<String, String>> {
+        return flowOf(Pair(storedToken, storedQueryId))
+    }
+
+    override suspend fun importPortfolioCsv(csvContent: String): Result<Pair<String, PortfolioData>> {
+        return Result.success(Pair("Interactive Brokers", mockData.copy(isMockData = false)))
+    }
+
+    override suspend fun clearImportedCsvData() {}
+
+    override fun getSavedImportedCsv(): Flow<String?> = flowOf(null)
+
+    override fun attachPreferencesRepository(preferencesRepository: com.example.portfoliomanager.data.local.UserPreferencesRepository) {}
+}

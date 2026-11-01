@@ -1,0 +1,593 @@
+package com.example.portfoliomanager.data.parser
+
+import com.example.portfoliomanager.data.model.AccountSummary
+import com.example.portfoliomanager.data.model.AssetCategory
+import com.example.portfoliomanager.data.model.Balances
+import com.example.portfoliomanager.data.model.GeographyAllocation
+import com.example.portfoliomanager.data.model.MarginRequirements
+import com.example.portfoliomanager.data.model.PortfolioData
+import com.example.portfoliomanager.data.model.Position
+import com.example.portfoliomanager.data.model.SectorAllocation
+import java.io.ByteArrayInputStream
+import javax.xml.parsers.DocumentBuilderFactory
+import org.w3c.dom.Element
+
+/**
+ * Parser for XTB statement exports in both XLSX (OpenXML format) and CSV formats.
+ */
+class XtbCsvParser : BrokerCsvParser {
+
+    override val brokerName: String = "XTB"
+
+    override fun canParse(csvContent: String): Boolean {
+        if (csvContent.isBlank()) return false
+        val trimmed = csvContent.trim()
+
+        // 1. Check if XLSX format (Base64 or Zip PK header)
+        val xlsxBytes = extractXlsxBytes(trimmed)
+        if (xlsxBytes != null) {
+            return canParseXlsx(xlsxBytes)
+        }
+
+        // 2. Check CSV format
+        val firstLines = trimmed.lines().take(10).joinToString("\n").lowercase()
+        return firstLines.contains("xtb") ||
+                (firstLines.contains("position") && firstLines.contains("open price") && firstLines.contains("close price")) ||
+                (firstLines.contains("ticket") && firstLines.contains("profit") && firstLines.contains("symbol")) ||
+                (firstLines.contains("instrument") && firstLines.contains("volume") && firstLines.contains("profit"))
+    }
+
+    override fun parse(csvContent: String): PortfolioData {
+        require(canParse(csvContent)) { "Supplied file does not match XTB statement format (XLSX or CSV)." }
+
+        val trimmed = csvContent.trim()
+        val xlsxBytes = extractXlsxBytes(trimmed)
+
+        return if (xlsxBytes != null) {
+            parseXlsx(xlsxBytes)
+        } else {
+            parseCsv(trimmed)
+        }
+    }
+
+    private fun extractXlsxBytes(content: String): ByteArray? {
+        if (content.startsWith("BASE64_XLSX:")) {
+            val b64 = content.substring("BASE64_XLSX:".length).trim()
+            return decodeBase64(b64)
+        }
+
+        // Direct Base64 check (starts with standard Zip magic in base64: "UEsDB" or "UEsBA")
+        if (content.length > 50 && (content.startsWith("UEsDB") || content.startsWith("UEsBA"))) {
+            val decoded = decodeBase64(content)
+            if (decoded != null && isZipMagic(decoded)) return decoded
+        }
+
+        // Raw bytes check (ISO_8859_1 string representation)
+        val rawBytes = content.toByteArray(Charsets.ISO_8859_1)
+        if (isZipMagic(rawBytes)) {
+            return rawBytes
+        }
+
+        return null
+    }
+
+    private fun isZipMagic(bytes: ByteArray): Boolean {
+        return bytes.size >= 4 &&
+                bytes[0] == 0x50.toByte() && // 'P'
+                bytes[1] == 0x4B.toByte() && // 'K'
+                bytes[2] == 0x03.toByte() &&
+                bytes[3] == 0x04.toByte()
+    }
+
+    private fun decodeBase64(b64Str: String): ByteArray? {
+        val cleanB64 = b64Str.replace("\r", "").replace("\n", "").trim()
+        return try {
+            java.util.Base64.getDecoder().decode(cleanB64)
+        } catch (_: Exception) {
+            try {
+                java.util.Base64.getMimeDecoder().decode(cleanB64)
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
+    private fun canParseXlsx(bytes: ByteArray): Boolean {
+        return try {
+            val entries = unzipEntries(bytes)
+            if (entries.isEmpty()) return false
+            val sharedStrings = parseSharedStrings(entries["xl/sharedStrings.xml"])
+            val sheetMap = parseSheetMap(entries["xl/workbook.xml"], entries["xl/_rels/workbook.xml.rels"])
+
+            val hasWorksheets = entries.keys.any { it.startsWith("xl/worksheets/") }
+            if (!hasWorksheets) return false
+
+            val sharedStringsText = sharedStrings.joinToString(" ").lowercase()
+            val hasXtbKeywords = sharedStringsText.contains("open positions") ||
+                    sharedStringsText.contains("closed positions") ||
+                    sharedStringsText.contains("cash operations") ||
+                    sharedStringsText.contains("xtb")
+
+            hasXtbKeywords || sheetMap.containsKey("Open Positions") || sheetMap.containsKey("Cash Operations")
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun parseXlsx(bytes: ByteArray): PortfolioData {
+        val entries = unzipEntries(bytes)
+        val sharedStrings = parseSharedStrings(entries["xl/sharedStrings.xml"])
+        val sheetMap = parseSheetMap(entries["xl/workbook.xml"], entries["xl/_rels/workbook.xml.rels"])
+
+        val openPositionsSheetPath = sheetMap["Open Positions"]
+            ?: entries.keys.firstOrNull { it.contains("worksheets/sheet3.xml") }
+            ?: entries.keys.firstOrNull { it.contains("worksheets/sheet") }
+            ?: throw IllegalArgumentException("XLSX neobsahuje hárok 'Open Positions'.")
+
+        val cashOperationsSheetPath = sheetMap["Cash Operations"]
+            ?: entries.keys.firstOrNull { it.contains("worksheets/sheet2.xml") }
+
+        val openPosRows = parseSheetRows(entries[openPositionsSheetPath], sharedStrings)
+        val cashOpRows = cashOperationsSheetPath?.let { parseSheetRows(entries[it], sharedStrings) } ?: emptyList()
+
+        println("DEBUG openPosRows size: ${openPosRows.size}, cashOpRows size: ${cashOpRows.size}")
+
+        var accountId = "50198829"
+        var currency = "EUR"
+
+        // Parse top metadata from Open Positions sheet
+        for (row in openPosRows.take(10)) {
+            if (row.size >= 2 && row[0].equals("Account number", ignoreCase = true)) {
+                accountId = row[1].ifBlank { accountId }
+            }
+            if (row.size >= 4 && row[1].contains("position value", ignoreCase = true) && row[3].isNotBlank()) {
+                currency = row[3]
+            }
+        }
+
+        // Calculate total cash from Cash Operations sheet
+        var totalCash = 0.0
+        val cashHeaderIdx = cashOpRows.indexOfFirst { r -> r.any { it.equals("Type", ignoreCase = true) } && r.any { it.equals("Amount", ignoreCase = true) } }
+        val amountColIdx = if (cashHeaderIdx != -1) cashOpRows[cashHeaderIdx].indexOfFirst { it.equals("Amount", ignoreCase = true) } else 5
+
+        val totalRow = cashOpRows.find { r -> r.isNotEmpty() && r[0].equals("Total", ignoreCase = true) }
+        if (totalRow != null && totalRow.size > amountColIdx) {
+            totalCash = totalRow[amountColIdx].toDoubleOrNull() ?: 0.0
+        } else if (cashHeaderIdx != -1 && amountColIdx != -1) {
+            for (r in cashOpRows.drop(cashHeaderIdx + 1)) {
+                if (r.isNotEmpty() && r[0].equals("Total", ignoreCase = true)) continue
+                if (r.size > amountColIdx) {
+                    val amt = r[amountColIdx].toDoubleOrNull()
+                    if (amt != null) {
+                        totalCash += amt
+                    }
+                }
+            }
+        }
+
+        val positions = mutableListOf<Position>()
+        val headerIdx = openPosRows.indexOfFirst { r ->
+            r.size > 4 && (r[0].equals("Product", ignoreCase = true) || r[1].equals("Instrument/Position", ignoreCase = true) || r[2].equals("Ticker", ignoreCase = true))
+        }
+
+        if (headerIdx != -1) {
+            val headerRow = openPosRows[headerIdx].map { it.lowercase() }
+            val tickerIdx = headerRow.indexOf("ticker").let { if (it != -1) it else 2 }
+            val nameIdx = headerRow.indexOf("instrument/position").let { if (it != -1) it else 1 }
+            val catIdx = headerRow.indexOf("category").let { if (it != -1) it else 3 }
+            val typeIdx = headerRow.indexOf("type").let { if (it != -1) it else 4 }
+            val volIdx = headerRow.indexOf("volume").let { if (it != -1) it else 5 }
+            val valIdx = headerRow.indexOf("value").let { if (it != -1) it else 6 }
+            val openPriceIdx = headerRow.indexOf("open price").let { if (it != -1) it else 8 }
+            val netPnlIdx = headerRow.indexOf("net profit").let { if (it != -1) it else 13 }
+            val netPnlPctIdx = headerRow.indexOf("net profit %").let { if (it != -1) it else 12 }
+
+            for (r in openPosRows.drop(headerIdx + 1)) {
+                if (r.size <= maxOf(tickerIdx, volIdx, valIdx)) continue
+
+                val typeVal = r.getOrElse(typeIdx) { "" }
+                // XTB summary rows have empty 'Type' (individual lot rows have 'BUY' or 'SELL')
+                if (typeVal.isNotBlank()) continue
+
+                val ticker = r.getOrElse(tickerIdx) { "" }.trim()
+                val name = r.getOrElse(nameIdx) { "" }.ifBlank { ticker }
+                if (ticker.isBlank()) continue
+
+                val catStr = r.getOrElse(catIdx) { "" }
+                val vol = r.getOrElse(volIdx) { "" }.toDoubleOrNull() ?: 0.0
+                val marketValue = r.getOrElse(valIdx) { "" }.toDoubleOrNull() ?: 0.0
+                val openPrice = r.getOrElse(openPriceIdx) { "" }.toDoubleOrNull() ?: 0.0
+                val netPnl = r.getOrElse(netPnlIdx) { "" }.toDoubleOrNull() ?: 0.0
+                val netPnlPct = r.getOrElse(netPnlPctIdx) { "" }.toDoubleOrNull()
+
+                if (vol <= 0.0 && marketValue <= 0.0) continue
+
+                val assetCategory = mapXtbCategory(catStr, ticker)
+                val markPrice = if (vol > 0.0) marketValue / vol else openPrice
+                val costBasisTotal = openPrice * vol
+                val pnlPercentage = netPnlPct ?: if (costBasisTotal != 0.0) (netPnl / costBasisTotal) * 100.0 else 0.0
+
+                val position = Position(
+                    id = "xtb_pos_${positions.size + 1}_$ticker",
+                    symbol = ticker,
+                    description = name,
+                    assetCategory = assetCategory,
+                    quantity = vol,
+                    costBasisPrice = openPrice,
+                    markPrice = markPrice,
+                    marketValue = marketValue,
+                    dailyPnl = 0.0,
+                    totalPnl = netPnl,
+                    pnlPercentage = pnlPercentage,
+                    sector = getSectorForSymbol(ticker, assetCategory),
+                    country = getCountryForSymbol(ticker)
+                )
+                positions.add(position)
+            }
+        }
+
+        val totalMarketValue = positions.sumOf { it.marketValue }
+        val netLiquidation = totalMarketValue + totalCash
+        val totalPnl = positions.sumOf { it.totalPnl }
+        val totalCostBasis = positions.sumOf { it.costBasisPrice * it.quantity }
+        val totalPnlPct = if (totalCostBasis > 0.0) (totalPnl / totalCostBasis) * 100.0 else 0.0
+
+        return PortfolioData(
+            accountSummary = AccountSummary(
+                accountId = "XTB-$accountId",
+                accountName = "XTB Account ($accountId)",
+                currency = currency,
+                netLiquidation = netLiquidation,
+                totalCashValue = totalCash,
+                settledCash = totalCash,
+                accruedCash = 0.0,
+                buyingPower = totalCash,
+                dailyPnl = 0.0,
+                dailyPnlPercentage = 0.0,
+                totalPnl = totalPnl,
+                totalPnlPercentage = totalPnlPct
+            ),
+            balances = Balances(
+                totalCash = totalCash,
+                settledCash = totalCash,
+                accruedCash = 0.0,
+                unrealizedPnl = totalPnl,
+                realizedPnl = 0.0,
+                netLiquidation = netLiquidation
+            ),
+            marginSummary = MarginRequirements(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            positions = positions,
+            sectorAllocations = calculateSectorAllocations(positions),
+            geographyAllocations = calculateGeographyAllocations(positions),
+            isMockData = false,
+            referenceCode = "XTB-XLSX-IMPORT"
+        )
+    }
+
+    private fun parseCsv(csvContent: String): PortfolioData {
+        val lines = csvContent.lines().map { it.trim() }.filter { it.isNotBlank() }
+        val positions = mutableListOf<Position>()
+        val totalCash = 0.0
+
+        val headerIdx = lines.indexOfFirst {
+            it.contains("symbol", ignoreCase = true) || it.contains("ticker", ignoreCase = true)
+        }
+
+        if (headerIdx != -1) {
+            val headers = lines[headerIdx].split(";").map { it.lowercase().trim('"') }
+            val tickerIdx = headers.indexOfFirst { it == "ticker" || it == "symbol" }
+            val nameIdx = headers.indexOfFirst { it == "instrument" || it == "name" }
+            val volIdx = headers.indexOfFirst { it == "volume" || it == "volume/shares" || it == "shares" }
+            val valIdx = headers.indexOfFirst { it == "value" || it == "market value" }
+            val priceIdx = headers.indexOfFirst { it == "open price" || it == "cost price" }
+            val pnlIdx = headers.indexOfFirst { it == "profit" || it == "net profit" }
+
+            for (line in lines.drop(headerIdx + 1)) {
+                val tokens = line.split(";").map { it.trim('"').trim() }
+                if (tokens.size <= tickerIdx || tickerIdx == -1) continue
+
+                val ticker = tokens[tickerIdx]
+                if (ticker.isBlank()) continue
+
+                val name = if (nameIdx != -1 && tokens.size > nameIdx) tokens[nameIdx] else ticker
+                val vol = if (volIdx != -1 && tokens.size > volIdx) tokens[volIdx].toDoubleOrNull() ?: 0.0 else 0.0
+                val mktVal = if (valIdx != -1 && tokens.size > valIdx) tokens[valIdx].toDoubleOrNull() ?: 0.0 else 0.0
+                val openPrice = if (priceIdx != -1 && tokens.size > priceIdx) tokens[priceIdx].toDoubleOrNull() ?: 0.0 else 0.0
+                val pnl = if (pnlIdx != -1 && tokens.size > pnlIdx) tokens[pnlIdx].toDoubleOrNull() ?: 0.0 else 0.0
+
+                if (vol <= 0.0 && mktVal <= 0.0) continue
+
+                val category = mapXtbCategory("", ticker)
+                val markPrice = if (vol > 0.0) mktVal / vol else openPrice
+
+                positions.add(
+                    Position(
+                        id = "xtb_csv_pos_${positions.size + 1}_$ticker",
+                        symbol = ticker,
+                        description = name,
+                        assetCategory = category,
+                        quantity = vol,
+                        costBasisPrice = openPrice,
+                        markPrice = markPrice,
+                        marketValue = mktVal,
+                        dailyPnl = 0.0,
+                        totalPnl = pnl,
+                        pnlPercentage = if (openPrice * vol != 0.0) (pnl / (openPrice * vol)) * 100.0 else 0.0,
+                        sector = getSectorForSymbol(ticker, category),
+                        country = getCountryForSymbol(ticker)
+                    )
+                )
+            }
+        }
+
+        val totalMarketValue = positions.sumOf { it.marketValue }
+        val netLiquidation = totalMarketValue + totalCash
+        val totalPnl = positions.sumOf { it.totalPnl }
+
+        return PortfolioData(
+            accountSummary = AccountSummary(
+                accountId = "XTB-Account",
+                accountName = "XTB Account",
+                currency = "EUR",
+                netLiquidation = netLiquidation,
+                totalCashValue = totalCash,
+                settledCash = totalCash,
+                accruedCash = 0.0,
+                buyingPower = totalCash,
+                dailyPnl = 0.0,
+                dailyPnlPercentage = 0.0,
+                totalPnl = totalPnl,
+                totalPnlPercentage = if (netLiquidation - totalPnl != 0.0) (totalPnl / (netLiquidation - totalPnl)) * 100.0 else 0.0
+            ),
+            balances = Balances(totalCash, totalCash, 0.0, totalPnl, 0.0, netLiquidation),
+            marginSummary = MarginRequirements(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            positions = positions,
+            sectorAllocations = calculateSectorAllocations(positions),
+            geographyAllocations = calculateGeographyAllocations(positions),
+            isMockData = false,
+            referenceCode = "XTB-CSV-IMPORT"
+        )
+    }
+
+    // --- XML / OpenXML XLSX Helper Functions ---
+
+    private fun unzipEntries(bytes: ByteArray): Map<String, ByteArray> {
+        val entries = mutableMapOf<String, ByteArray>()
+        var tempFile: java.io.File? = null
+        try {
+            tempFile = java.io.File.createTempFile("xtb_import_", ".xlsx")
+            tempFile.writeBytes(bytes)
+            java.util.zip.ZipFile(tempFile).use { zipFile ->
+                val enumeration = zipFile.entries()
+                while (enumeration.hasMoreElements()) {
+                    val entry = enumeration.nextElement()
+                    if (!entry.isDirectory) {
+                        zipFile.getInputStream(entry).use { input ->
+                            entries[entry.name] = input.readBytes()
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        } finally {
+            tempFile?.delete()
+        }
+        return entries
+    }
+
+    private fun parseSharedStrings(xmlBytes: ByteArray?): List<String> {
+        if (xmlBytes == null) return emptyList()
+        val strings = mutableListOf<String>()
+        try {
+            val factory = DocumentBuilderFactory.newInstance()
+            factory.isNamespaceAware = true
+            val doc = factory.newDocumentBuilder().parse(ByteArrayInputStream(xmlBytes))
+            val siList = doc.getElementsByTagNameNS("*", "si")
+
+            for (i in 0 until siList.length) {
+                val si = siList.item(i) as Element
+                val tList = si.getElementsByTagNameNS("*", "t")
+                val sb = StringBuilder()
+                for (j in 0 until tList.length) {
+                    sb.append(tList.item(j).textContent)
+                }
+                strings.add(sb.toString())
+            }
+        } catch (_: Exception) {}
+        return strings
+    }
+
+    private fun parseSheetMap(workbookBytes: ByteArray?, relsBytes: ByteArray?): Map<String, String> {
+        val sheetMap = mutableMapOf<String, String>()
+        val relMap = mutableMapOf<String, String>()
+
+        if (relsBytes != null) {
+            try {
+                val factory = DocumentBuilderFactory.newInstance()
+                factory.isNamespaceAware = true
+                val doc = factory.newDocumentBuilder().parse(ByteArrayInputStream(relsBytes))
+                val rels = doc.getElementsByTagNameNS("*", "Relationship")
+                for (i in 0 until rels.length) {
+                    val elem = rels.item(i) as Element
+                    val id = elem.getAttribute("Id")
+                    var target = elem.getAttribute("Target")
+                    if (id.isNotBlank() && target.isNotBlank()) {
+                        if (!target.startsWith("xl/")) {
+                            target = "xl/" + target.trimStart('/')
+                        }
+                        relMap[id] = target
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        if (workbookBytes != null) {
+            try {
+                val factory = DocumentBuilderFactory.newInstance()
+                factory.isNamespaceAware = true
+                val doc = factory.newDocumentBuilder().parse(ByteArrayInputStream(workbookBytes))
+                val sheets = doc.getElementsByTagNameNS("*", "sheet")
+                for (i in 0 until sheets.length) {
+                    val elem = sheets.item(i) as Element
+                    val name = elem.getAttribute("name")
+                    var rId = elem.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id")
+                    if (rId.isBlank()) {
+                        rId = elem.getAttribute("r:id")
+                    }
+                    val target = relMap[rId] ?: "xl/worksheets/sheet${i + 1}.xml"
+                    if (name.isNotBlank()) {
+                        sheetMap[name] = target
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        return sheetMap
+    }
+
+    private fun parseSheetRows(sheetBytes: ByteArray?, sharedStrings: List<String>): List<List<String>> {
+        if (sheetBytes == null) return emptyList()
+        val rows = mutableListOf<List<String>>()
+
+        try {
+            val factory = DocumentBuilderFactory.newInstance()
+            factory.isNamespaceAware = true
+            val doc = factory.newDocumentBuilder().parse(ByteArrayInputStream(sheetBytes))
+            val rowNodes = doc.getElementsByTagNameNS("*", "row")
+
+            for (i in 0 until rowNodes.length) {
+                val rowElem = rowNodes.item(i) as Element
+                val cNodes = rowElem.getElementsByTagNameNS("*", "c")
+                val rowMap = mutableMapOf<Int, String>()
+                var maxColIdx = -1
+
+                for (j in 0 until cNodes.length) {
+                    val cElem = cNodes.item(j) as Element
+                    val rRef = cElem.getAttribute("r")
+                    val colIdx = if (rRef.isNotBlank()) getColIndex(rRef) else j
+
+                    val tAttr = cElem.getAttribute("t")
+                    val vNodes = cElem.getElementsByTagNameNS("*", "v")
+                    var valStr = ""
+
+                    if (vNodes.length > 0) {
+                        val rawVal = vNodes.item(0).textContent.trim()
+                        if (tAttr == "s") {
+                            val idx = rawVal.toIntOrNull()
+                            if (idx != null && idx >= 0 && idx < sharedStrings.size) {
+                                valStr = sharedStrings[idx]
+                            }
+                        } else {
+                            valStr = rawVal
+                        }
+                    }
+
+                    if (colIdx >= 0) {
+                        rowMap[colIdx] = valStr
+                        if (colIdx > maxColIdx) maxColIdx = colIdx
+                    }
+                }
+
+                val rowList = mutableListOf<String>()
+                for (col in 0..maxOf(maxColIdx, 0)) {
+                    rowList.add(rowMap[col] ?: "")
+                }
+                rows.add(rowList)
+            }
+        } catch (_: Exception) {}
+
+        return rows
+    }
+
+    private fun getColIndex(cellRef: String): Int {
+        val letters = cellRef.takeWhile { it.isLetter() }.uppercase()
+        if (letters.isEmpty()) return -1
+        var index = 0
+        for (ch in letters) {
+            index = index * 26 + (ch - 'A' + 1)
+        }
+        return index - 1
+    }
+
+    private fun mapXtbCategory(catStr: String, ticker: String): AssetCategory {
+        val upper = catStr.uppercase()
+        return when {
+            upper.contains("ETF") -> AssetCategory.ETF
+            upper.contains("STOCK") || upper.contains("AKCIE") -> AssetCategory.STK
+            upper.contains("CRYPTO") -> AssetCategory.CRYPTO
+            upper.contains("BOND") -> AssetCategory.BOND
+            upper.contains("OPTION") -> AssetCategory.OPT
+            ticker.endsWith(".DE") || ticker.endsWith(".US") || ticker.endsWith(".UK") || ticker.endsWith(".FI") -> AssetCategory.STK
+            else -> AssetCategory.STK
+        }
+    }
+
+    private fun getCountryForSymbol(symbol: String): String {
+        val upper = symbol.uppercase()
+        return when {
+            upper.endsWith(".US") -> "US"
+            upper.endsWith(".DE") -> "DE"
+            upper.endsWith(".UK") -> "GB"
+            upper.endsWith(".FI") -> "FI"
+            upper.endsWith(".FR") -> "FR"
+            upper.endsWith(".NL") || upper.endsWith(".AS") -> "NL"
+            else -> "US"
+        }
+    }
+
+    private fun getSectorForSymbol(symbol: String, category: AssetCategory): String {
+        if (category == AssetCategory.ETF) return "Broad ETF"
+        val upper = symbol.uppercase()
+        return when {
+            upper.startsWith("AMD") || upper.startsWith("NVD") || upper.startsWith("AMAT") || upper.startsWith("LRCX") -> "Technology"
+            upper.startsWith("AMZN") || upper.startsWith("MCD") -> "Consumer Discretionary"
+            upper.startsWith("PEP") || upper.startsWith("O.") -> "Consumer Staples"
+            upper.startsWith("NVO") || upper.startsWith("MPT") || upper.startsWith("MPW") -> "Healthcare"
+            upper.startsWith("VZ") || upper.startsWith("NOKIA") -> "Telecommunications"
+            else -> "Other"
+        }
+    }
+
+    private fun calculateSectorAllocations(positions: List<Position>): List<SectorAllocation> {
+        val totalValue = positions.sumOf { it.marketValue }
+        if (totalValue <= 0.0) return emptyList()
+
+        return positions.groupBy { it.sector }.map { (sector, posList) ->
+            val sectorVal = posList.sumOf { it.marketValue }
+            val pct = (sectorVal / totalValue) * 100.0
+            SectorAllocation(
+                sector = sector,
+                value = sectorVal,
+                percentage = pct,
+                colorHex = mapSectorColor(sector)
+            )
+        }.sortedByDescending { it.value }
+    }
+
+    private fun calculateGeographyAllocations(positions: List<Position>): List<GeographyAllocation> {
+        val totalValue = positions.sumOf { it.marketValue }
+        if (totalValue <= 0.0) return emptyList()
+
+        return positions.groupBy { it.country }.map { (country, posList) ->
+            val countryVal = posList.sumOf { it.marketValue }
+            val pct = (countryVal / totalValue) * 100.0
+            GeographyAllocation(
+                country = country,
+                value = countryVal,
+                percentage = pct
+            )
+        }.sortedByDescending { it.value }
+    }
+
+    private fun mapSectorColor(sector: String): String {
+        return when (sector) {
+            "Technology" -> "#4CAF50"
+            "Consumer Discretionary" -> "#2196F3"
+            "Consumer Staples" -> "#FF9800"
+            "Healthcare" -> "#E91E63"
+            "Telecommunications" -> "#9C27B0"
+            "Broad ETF" -> "#00BCD4"
+            else -> "#607D8B"
+        }
+    }
+}
