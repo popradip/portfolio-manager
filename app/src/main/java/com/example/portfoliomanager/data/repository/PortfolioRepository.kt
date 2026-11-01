@@ -322,8 +322,10 @@ class PortfolioRepositoryImpl(
         val totalUnrealizedPnl = mergedPositions.filter { it.quantity > 0.0 }.sumOf { it.totalPnl }
         val totalRealizedPnl = results.sumOf { it.portfolioData.balances.realizedPnl }
         val combinedTotalPnl = totalUnrealizedPnl + totalRealizedPnl
-        val totalCostBasis = mergedPositions.filter { it.quantity > 0.0 }.sumOf { it.costBasisPrice * it.quantity }
-        val totalPnlPct = if (totalCostBasis > 0.0) (combinedTotalPnl / totalCostBasis) * 100.0 else 0.0
+        val portfolioCostBasis = (netLiquidation - combinedTotalPnl).takeIf { it > 0.0 }
+            ?: mergedPositions.filter { it.quantity > 0.0 }.sumOf { it.costBasisPrice * it.quantity }.takeIf { it > 0.0 }
+            ?: 1.0
+        val totalPnlPct = (combinedTotalPnl / portfolioCostBasis) * 100.0
         val currency = results.firstOrNull()?.portfolioData?.accountSummary?.currency ?: "EUR"
 
         val sectorAllocations = calculateSectorAllocations(mergedPositions)

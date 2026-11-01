@@ -516,7 +516,9 @@ class PortfolioViewModel(
         range: PortfolioTimeRange
     ): PortfolioHistoryData {
         val currentValue = data.accountSummary.netLiquidation.takeIf { it > 0 } ?: 10000.0
-        val totalPnlPct = data.accountSummary.totalPnlPercentage
+        val totalPnl = data.accountSummary.totalPnl.takeIf { it != 0.0 }
+            ?: (data.balances.unrealizedPnl + data.balances.realizedPnl).takeIf { it != 0.0 }
+            ?: data.positions.sumOf { it.totalPnl }
 
         val numPoints = when (range) {
             PortfolioTimeRange.ONE_MONTH -> 30
@@ -527,16 +529,30 @@ class PortfolioViewModel(
             PortfolioTimeRange.ALL -> 60
         }
 
+        val ageDays = getPortfolioAgeDays(data)
+
         val rangeFactor = when (range) {
-            PortfolioTimeRange.ONE_MONTH -> 0.03
-            PortfolioTimeRange.THREE_MONTHS -> 0.07
-            PortfolioTimeRange.SIX_MONTHS -> 0.12
-            PortfolioTimeRange.ONE_YEAR -> 0.18
-            PortfolioTimeRange.YTD -> 0.15
-            PortfolioTimeRange.ALL -> 0.28
+            PortfolioTimeRange.ALL -> 1.00
+            PortfolioTimeRange.ONE_MONTH -> if (ageDays != null) (30.0 / ageDays).coerceAtMost(1.0) else 0.10
+            PortfolioTimeRange.THREE_MONTHS -> if (ageDays != null) (90.0 / ageDays).coerceAtMost(1.0) else 0.25
+            PortfolioTimeRange.SIX_MONTHS -> if (ageDays != null) (180.0 / ageDays).coerceAtMost(1.0) else 0.45
+            PortfolioTimeRange.ONE_YEAR -> if (ageDays != null) (365.0 / ageDays).coerceAtMost(1.0) else 0.70
+            PortfolioTimeRange.YTD -> {
+                val cal = java.util.Calendar.getInstance()
+                val dayOfYear = cal.get(java.util.Calendar.DAY_OF_YEAR)
+                if (ageDays != null) {
+                    (dayOfYear.toDouble() / ageDays).coerceAtMost(1.0)
+                } else {
+                    (dayOfYear.toDouble() / 365.0).coerceIn(0.10, 1.0) * 0.70
+                }
+            }
         }
 
-        val startValue = (currentValue / (1.0 + (totalPnlPct / 100.0) * rangeFactor)).coerceAtLeast(100.0)
+        val targetChangeAmount = totalPnl * rangeFactor
+        val startValue = (currentValue - targetChangeAmount).coerceAtLeast(1.0)
+        val changeAmount = currentValue - startValue
+        val changePercentage = if (startValue > 0) (changeAmount / startValue) * 100.0 else data.accountSummary.totalPnlPercentage
+
         val points = mutableListOf<PortfolioHistoryPoint>()
         val calendar = java.util.Calendar.getInstance()
         val skLocale = Locale.forLanguageTag("sk")
@@ -574,9 +590,6 @@ class PortfolioViewModel(
             calendar.add(java.util.Calendar.DAY_OF_YEAR, dayStep)
         }
 
-        val changeAmount = currentValue - startValue
-        val changePercentage = if (startValue > 0) (changeAmount / startValue) * 100.0 else 0.0
-
         return PortfolioHistoryData(
             timeRange = range,
             points = points,
@@ -585,6 +598,44 @@ class PortfolioViewModel(
             changeAmount = changeAmount,
             changePercentage = changePercentage
         )
+    }
+
+    private fun getPortfolioAgeDays(data: PortfolioData): Int? {
+        val dateFormats = listOf(
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US),
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US),
+            java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        )
+        val now = System.currentTimeMillis()
+        var earliestTimestamp: Long? = null
+
+        for (pos in data.positions) {
+            for (trade in pos.trades) {
+                val dateStr = trade.date.trim()
+                if (dateStr.isBlank()) continue
+                for (df in dateFormats) {
+                    try {
+                        val date = df.parse(dateStr)
+                        if (date != null) {
+                            val ts = date.time
+                            if (ts in 1..now) {
+                                if (earliestTimestamp == null || ts < earliestTimestamp) {
+                                    earliestTimestamp = ts
+                                }
+                            }
+                            break
+                        }
+                    } catch (_: Exception) {
+                        // Ignore parse error
+                    }
+                }
+            }
+        }
+
+        return earliestTimestamp?.let {
+            val diffMs = now - it
+            (diffMs / (1000L * 60 * 60 * 24)).toInt().coerceAtLeast(1)
+        }
     }
 
     // --- Helper calculations ---

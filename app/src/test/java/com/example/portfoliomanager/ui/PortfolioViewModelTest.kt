@@ -233,6 +233,20 @@ class PortfolioViewModelTest {
         assertEquals(initialQuantity + 5.0, updatedPosition!!.quantity, 0.001)
         assertTrue(updatedPosition.trades.any { it.price == 180.0 && it.quantity == 5.0 })
     }
+
+    @Test
+    fun `selecting ALL time range matches total portfolio PnL`() {
+        val data = viewModel.uiState.value.portfolioData
+        assertNotNull(data)
+        val expectedTotalPnl = data!!.accountSummary.totalPnl
+
+        viewModel.onTimeRangeSelected(com.example.portfoliomanager.data.model.PortfolioTimeRange.ALL)
+
+        val historyData = viewModel.uiState.value.portfolioHistoryData
+        assertNotNull(historyData)
+        assertEquals(com.example.portfoliomanager.data.model.PortfolioTimeRange.ALL, historyData!!.timeRange)
+        assertEquals(expectedTotalPnl, historyData.changeAmount, 0.01)
+    }
 }
 
 private class FakePortfolioRepository(

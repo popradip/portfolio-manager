@@ -458,8 +458,10 @@ class XtbCsvParser : BrokerCsvParser {
         val openPositionsList = positionsWithTrades.filter { it.quantity > 0.0 }
         val totalUnrealizedPnl = openPositionsList.sumOf { it.totalPnl }
         val combinedTotalPnl = totalUnrealizedPnl + totalRealizedPnl
-        val totalCostBasis = openPositionsList.sumOf { it.costBasisPrice * it.quantity }
-        val totalPnlPct = if (totalCostBasis > 0.0) (combinedTotalPnl / totalCostBasis) * 100.0 else 0.0
+        val portfolioCostBasis = (netLiquidation - combinedTotalPnl).takeIf { it > 0.0 }
+            ?: openPositionsList.sumOf { it.costBasisPrice * it.quantity }.takeIf { it > 0.0 }
+            ?: 1.0
+        val totalPnlPct = (combinedTotalPnl / portfolioCostBasis) * 100.0
 
         return PortfolioData(
             accountSummary = AccountSummary(

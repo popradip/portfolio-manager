@@ -278,8 +278,12 @@ class IbkrFlexXmlParser {
 
         val totalPnlSum = if (unrealizedPnl != 0.0) unrealizedPnl else positionsList.sumOf { it.totalPnl }
         val dailyPnlSum = if (dailyPnl != 0.0) dailyPnl else positionsList.sumOf { it.dailyPnl }
+        val portfolioCostBasis = (calculatedNetLiquidation - totalPnlSum).takeIf { it > 0.0 }
+            ?: positionsList.filter { it.quantity > 0.0 }.sumOf { it.costBasisPrice * it.quantity }.takeIf { it > 0.0 }
+            ?: 1.0
+
         val dailyPnlPct = if (calculatedNetLiquidation > 0.0) (dailyPnlSum / calculatedNetLiquidation) * 100.0 else 0.0
-        val totalPnlPct = if (calculatedNetLiquidation > 0.0) (totalPnlSum / calculatedNetLiquidation) * 100.0 else 0.0
+        val totalPnlPct = (totalPnlSum / portfolioCostBasis) * 100.0
 
         val accountSummary = AccountSummary(
             accountId = accountId,

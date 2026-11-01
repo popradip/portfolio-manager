@@ -113,8 +113,13 @@ class MarketDataRepositoryImpl(
             val realizedPnl = portfolioData.balances.realizedPnl
             val combinedTotalPnl = updatedUnrealizedPnlSum + realizedPnl
 
+            val openPositions = updatedPositions.filter { it.quantity > 0.0 }
+            val portfolioCostBasis = (updatedNetLiquidation - combinedTotalPnl).takeIf { it > 0.0 }
+                ?: openPositions.sumOf { it.quantity * it.costBasisPrice * it.fxRateToPortfolio }.takeIf { it > 0.0 }
+                ?: 1.0
+
             val updatedDailyPnlPct = if (updatedNetLiquidation > 0.0) (updatedDailyPnlSum / updatedNetLiquidation) * 100.0 else 0.0
-            val updatedTotalPnlPct = if (updatedNetLiquidation > 0.0) (combinedTotalPnl / updatedNetLiquidation) * 100.0 else 0.0
+            val updatedTotalPnlPct = (combinedTotalPnl / portfolioCostBasis) * 100.0
 
             val updatedAccountSummary = portfolioData.accountSummary.copy(
                 currency = targetCurrency,
