@@ -1318,7 +1318,7 @@ fun PositionCard(
                                 modifier = Modifier.size(20.dp)
                             )
                             Text(
-                                text = "História nákupov (${position.trades.size})",
+                                text = "Transakcie (${position.trades.size})",
                                 style = MaterialTheme.typography.titleSmall.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = TextPrimary
@@ -1360,7 +1360,7 @@ fun PositionCard(
                         ) {
                             if (position.trades.isEmpty()) {
                                 Text(
-                                    text = "Zatiaľ neboli zaevidované žiadne nákupy.",
+                                    text = "Zatiaľ neboli zaevidované žiadne transakcie.",
                                     style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary),
                                     modifier = Modifier.padding(vertical = 4.dp)
                                 )

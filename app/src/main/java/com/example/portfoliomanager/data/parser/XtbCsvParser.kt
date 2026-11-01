@@ -404,7 +404,10 @@ class XtbCsvParser : BrokerCsvParser {
 
         // Add closed positions (quantity = 0) for tickers that are NOT in open positions
         for ((upperTicker, info) in closedTickerMap) {
-            val existsInOpen = positions.any { it.symbol.uppercase() == upperTicker }
+            val existsInOpen = positions.any { pos ->
+                pos.symbol.equals(info.ticker, ignoreCase = true) ||
+                (pos.description.isNotBlank() && pos.description.equals(info.instrumentName, ignoreCase = true))
+            }
             if (!existsInOpen) {
                 val assetCategory = mapXtbCategory(info.categoryStr, info.ticker)
                 val posCurrency = detectCurrencyFromTicker(info.ticker, currency)
@@ -432,13 +435,22 @@ class XtbCsvParser : BrokerCsvParser {
         }
 
         val positionsWithTrades = positions.map { pos ->
-            val symbolTrades = tradesMap[pos.symbol.uppercase()] ?: emptyList()
-            if (symbolTrades.isNotEmpty()) {
-                val mergedTrades = (pos.trades + symbolTrades).distinctBy { it.id }.sortedByDescending { it.date }
-                pos.copy(trades = mergedTrades)
-            } else {
-                pos
-            }
+            val posSymbolUpper = pos.symbol.uppercase()
+            val posDescLower = pos.description.trim().lowercase()
+
+            val symbolTrades = tradesMap[posSymbolUpper] ?: emptyList()
+            val descTrades = closedTickerMap.values
+                .filter { info ->
+                    info.ticker.uppercase() == posSymbolUpper ||
+                    (posDescLower.isNotBlank() && info.instrumentName.trim().lowercase() == posDescLower)
+                }
+                .flatMap { it.trades }
+
+            val mergedTrades = (pos.trades + symbolTrades + descTrades)
+                .distinctBy { it.id }
+                .sortedByDescending { it.date }
+
+            pos.copy(trades = mergedTrades)
         }
 
         val totalMarketValue = positionsWithTrades.sumOf { it.marketValue }

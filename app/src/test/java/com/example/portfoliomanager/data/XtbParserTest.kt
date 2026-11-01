@@ -50,8 +50,8 @@ class XtbParserTest {
         assertEquals("XTB-50198829", portfolioData.accountSummary.accountId)
         assertEquals("EUR", portfolioData.accountSummary.currency)
 
-        // Verify total position count (27 open + 4 closed positions like AMD)
-        assertEquals(31, portfolioData.positions.size)
+        // Verify total position count (27 open + 3 closed positions)
+        assertEquals(30, portfolioData.positions.size)
 
         // Verify cash calculation from Cash Operations
         assertEquals(171.18, portfolioData.accountSummary.totalCashValue, 0.01)
@@ -79,6 +79,11 @@ class XtbParserTest {
         assertTrue("McDonald's should have parsed trades", mcdPos.trades.isNotEmpty())
         assertEquals(17, mcdPos.trades.size)
         assertTrue(mcdPos.trades.any { it.buySell == "BUY" && it.quantity == 1.0 })
+
+        // Verify Nvidia (NVD.DE) has closed sell trade merged from NVDA.US
+        val nvdPos = portfolioData.positions.find { it.symbol == "NVD.DE" }
+        assertNotNull(nvdPos)
+        assertTrue("Nvidia should contain merged sell trade", nvdPos!!.trades.any { it.buySell == "SELL" })
 
         val totalTradesCount = portfolioData.positions.sumOf { it.trades.size }
         assertTrue("Portfolio should contain imported trades across positions", totalTradesCount > 0)
