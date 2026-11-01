@@ -100,6 +100,7 @@ import com.example.portfoliomanager.ui.theme.ActiveLimePillText
 import com.example.portfoliomanager.ui.theme.CardBackground
 import com.example.portfoliomanager.ui.theme.CardBorderColor
 import com.example.portfoliomanager.ui.theme.DarkPill
+import com.example.portfoliomanager.ui.theme.InputFieldBg
 import com.example.portfoliomanager.ui.theme.NegativeRed
 import com.example.portfoliomanager.ui.theme.NegativeRedBg
 import com.example.portfoliomanager.ui.theme.PositiveGreen
@@ -874,7 +875,7 @@ fun YourAssetsSection(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(Color.White)
+                    .background(CardBackground)
             ) {
                 Icon(
                     imageVector = Icons.Rounded.FilterList,
@@ -916,10 +917,13 @@ fun YourAssetsSection(
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedBorderColor = DarkPill,
-                    unfocusedBorderColor = CardBorderColor
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary,
+                    focusedContainerColor = InputFieldBg,
+                    unfocusedContainerColor = InputFieldBg,
+                    focusedBorderColor = ActiveLimePill,
+                    unfocusedBorderColor = CardBorderColor,
+                    cursorColor = TextPrimary
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1436,7 +1440,7 @@ fun IbkrSettingsDialog(
             }
         },
         shape = RoundedCornerShape(24.dp),
-        containerColor = Color.White
+        containerColor = CardBackground
     )
 }
 
@@ -1685,6 +1689,15 @@ fun AddTradeDialog(
                     label = { Text("Množstvo / Počet kusov") },
                     placeholder = { Text("napr. 10.0") },
                     singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedContainerColor = InputFieldBg,
+                        unfocusedContainerColor = InputFieldBg,
+                        focusedBorderColor = ActiveLimePill,
+                        unfocusedBorderColor = CardBorderColor,
+                        cursorColor = TextPrimary
+                    ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1698,6 +1711,15 @@ fun AddTradeDialog(
                     label = { Text("Nákupná cena za kus") },
                     placeholder = { Text("napr. 150.00") },
                     singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedContainerColor = InputFieldBg,
+                        unfocusedContainerColor = InputFieldBg,
+                        focusedBorderColor = ActiveLimePill,
+                        unfocusedBorderColor = CardBorderColor,
+                        cursorColor = TextPrimary
+                    ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1711,6 +1733,15 @@ fun AddTradeDialog(
                     label = { Text("Dátum nákupu (YYYY-MM-DD)") },
                     placeholder = { Text("YYYY-MM-DD") },
                     singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedContainerColor = InputFieldBg,
+                        unfocusedContainerColor = InputFieldBg,
+                        focusedBorderColor = ActiveLimePill,
+                        unfocusedBorderColor = CardBorderColor,
+                        cursorColor = TextPrimary
+                    ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1724,6 +1755,15 @@ fun AddTradeDialog(
                     label = { Text("Poplatok za nákup (voliteľné)") },
                     placeholder = { Text("0.0") },
                     singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedContainerColor = InputFieldBg,
+                        unfocusedContainerColor = InputFieldBg,
+                        focusedBorderColor = ActiveLimePill,
+                        unfocusedBorderColor = CardBorderColor,
+                        cursorColor = TextPrimary
+                    ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1761,6 +1801,8 @@ fun AddTradeDialog(
             TextButton(onClick = onDismiss) {
                 Text("Zrušiť", style = MaterialTheme.typography.labelLarge)
             }
-        }
+        },
+        shape = RoundedCornerShape(24.dp),
+        containerColor = CardBackground
     )
 }
