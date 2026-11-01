@@ -449,6 +449,11 @@ private fun rememberTimeStr(): String {
     return sdf.format(Date())
 }
 
+enum class PortfolioChartType {
+    LINE,
+    BAR
+}
+
 // --- Portfolio Evolution Chart Card ---
 
 @Composable
@@ -462,6 +467,7 @@ fun PortfolioEvolutionChartCard(
     modifier: Modifier = Modifier
 ) {
     var activePoint by remember(historyData) { mutableStateOf<PortfolioHistoryPoint?>(null) }
+    var chartType by remember { mutableStateOf(PortfolioChartType.BAR) }
     val points = historyData?.points ?: emptyList()
 
     val activeIdx = if (activePoint != null && points.isNotEmpty()) points.indexOf(activePoint) else -1
@@ -499,7 +505,7 @@ fun PortfolioEvolutionChartCard(
                 .fillMaxWidth()
                 .padding(18.dp)
         ) {
-            // Header Row: Title & Active Point Date Label
+            // Header Row: Title & Active Point Date Label / Chart Type Switch
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -532,18 +538,53 @@ fun PortfolioEvolutionChartCard(
                     )
                 }
 
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFFF1F5F9)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text(
-                        text = activePoint?.dateLabel ?: "Dnes",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            color = DarkPill
-                        ),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                    // Chart Type Toggle Chip
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFFF1F5F9),
+                        modifier = Modifier.clickable {
+                            chartType = if (chartType == PortfolioChartType.BAR) PortfolioChartType.LINE else PortfolioChartType.BAR
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (chartType == PortfolioChartType.BAR) Icons.Rounded.Analytics else Icons.AutoMirrored.Rounded.TrendingUp,
+                                contentDescription = "Typ grafu",
+                                tint = DarkPill,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = if (chartType == PortfolioChartType.BAR) "Stĺpce" else "Čiara",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = DarkPill
+                                )
+                            )
+                        }
+                    }
+
+                    // Active Date Chip
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFF1F5F9)
+                    ) {
+                        Text(
+                            text = activePoint?.dateLabel ?: "Dnes",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = DarkPill
+                            ),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
                 }
             }
 
@@ -664,114 +705,189 @@ fun PortfolioEvolutionChartCard(
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
-                            .pointerInput(points) {
+                            .pointerInput(points, chartType) {
                                 detectDragGestures(
                                     onDragStart = { offset ->
-                                        val xRatio = (offset.x / size.width).coerceIn(0f, 1f)
-                                        val idx = (xRatio * (points.size - 1)).roundToInt().coerceIn(0, points.size - 1)
+                                        val idx = if (chartType == PortfolioChartType.BAR) {
+                                            val slotWidth = size.width / points.size
+                                            (offset.x / slotWidth).toInt().coerceIn(0, points.size - 1)
+                                        } else {
+                                            val xRatio = (offset.x / size.width).coerceIn(0f, 1f)
+                                            (xRatio * (points.size - 1)).roundToInt().coerceIn(0, points.size - 1)
+                                        }
                                         activePoint = points[idx]
                                     },
                                     onDrag = { change, _ ->
-                                        val xRatio = (change.position.x / size.width).coerceIn(0f, 1f)
-                                        val idx = (xRatio * (points.size - 1)).roundToInt().coerceIn(0, points.size - 1)
+                                        val idx = if (chartType == PortfolioChartType.BAR) {
+                                            val slotWidth = size.width / points.size
+                                            (change.position.x / slotWidth).toInt().coerceIn(0, points.size - 1)
+                                        } else {
+                                            val xRatio = (change.position.x / size.width).coerceIn(0f, 1f)
+                                            (xRatio * (points.size - 1)).roundToInt().coerceIn(0, points.size - 1)
+                                        }
                                         activePoint = points[idx]
                                     },
                                     onDragEnd = { activePoint = null },
                                     onDragCancel = { activePoint = null }
                                 )
                             }
-                            .pointerInput(points) {
+                            .pointerInput(points, chartType) {
                                 detectTapGestures { offset ->
-                                    val xRatio = (offset.x / size.width).coerceIn(0f, 1f)
-                                    val idx = (xRatio * (points.size - 1)).roundToInt().coerceIn(0, points.size - 1)
+                                    val idx = if (chartType == PortfolioChartType.BAR) {
+                                        val slotWidth = size.width / points.size
+                                        (offset.x / slotWidth).toInt().coerceIn(0, points.size - 1)
+                                    } else {
+                                        val xRatio = (offset.x / size.width).coerceIn(0f, 1f)
+                                        (xRatio * (points.size - 1)).roundToInt().coerceIn(0, points.size - 1)
+                                    }
                                     activePoint = points[idx]
                                 }
                             }
                     ) {
                         val w = size.width
                         val h = size.height
-                        val stepX = w / (points.size - 1)
 
-                        val path = Path()
-                        val fillPath = Path()
+                        if (chartType == PortfolioChartType.BAR) {
+                            val totalPoints = points.size
+                            val slotWidth = w / totalPoints
+                            val rawBarWidth = slotWidth * 0.68f
+                            val barWidth = rawBarWidth.coerceIn(3.dp.toPx(), 22.dp.toPx())
 
-                        points.forEachIndexed { idx, pt ->
-                            val x = idx * stepX
-                            val normY = ((pt.value - minVal) / range).toFloat()
-                            val y = h - (normY * (h - 20.dp.toPx())) - 10.dp.toPx()
+                            points.forEachIndexed { idx, pt ->
+                                val normY = ((pt.value - minVal) / range).toFloat()
+                                val yTop = h - (normY * (h - 25.dp.toPx())) - 10.dp.toPx()
+                                val yBottom = h - 4.dp.toPx()
 
-                            if (idx == 0) {
-                                path.moveTo(x, y)
-                                fillPath.moveTo(x, h)
-                                fillPath.lineTo(x, y)
-                            } else {
-                                val prevX = (idx - 1) * stepX
-                                val prevPt = points[idx - 1]
-                                val prevNormY = ((prevPt.value - minVal) / range).toFloat()
-                                val prevY = h - (prevNormY * (h - 20.dp.toPx())) - 10.dp.toPx()
+                                val centerX = (idx + 0.5f) * slotWidth
+                                val barLeft = centerX - barWidth / 2f
 
-                                val ctrlX1 = prevX + (stepX / 2f)
-                                val ctrlY1 = prevY
-                                val ctrlX2 = prevX + (stepX / 2f)
-                                val ctrlY2 = y
+                                val isBarPositive = if (idx > 0) pt.value >= points[idx - 1].value else isRangePositive
+                                val baseColor = if (isBarPositive) PositiveGreen else NegativeRed
 
-                                path.cubicTo(ctrlX1, ctrlY1, ctrlX2, ctrlY2, x, y)
-                                fillPath.cubicTo(ctrlX1, ctrlY1, ctrlX2, ctrlY2, x, y)
+                                val isSelected = (activeIdx == idx)
+                                val barColor = when {
+                                    activePoint == null -> baseColor
+                                    isSelected -> baseColor
+                                    else -> baseColor.copy(alpha = 0.30f)
+                                }
+
+                                val cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx(), 3.dp.toPx())
+                                val barHeight = (yBottom - yTop).coerceAtLeast(4.dp.toPx())
+
+                                drawRoundRect(
+                                    color = barColor,
+                                    topLeft = androidx.compose.ui.geometry.Offset(barLeft, yTop),
+                                    size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
+                                    cornerRadius = cornerRadius
+                                )
+
+                                if (isSelected) {
+                                    // Vertical dashed line
+                                    drawLine(
+                                        color = indicatorColor,
+                                        start = androidx.compose.ui.geometry.Offset(centerX, 0f),
+                                        end = androidx.compose.ui.geometry.Offset(centerX, h),
+                                        strokeWidth = 1.5.dp.toPx(),
+                                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                                    )
+
+                                    // Top dot highlight
+                                    drawCircle(
+                                        color = Color.White,
+                                        radius = 6.dp.toPx(),
+                                        center = androidx.compose.ui.geometry.Offset(centerX, yTop)
+                                    )
+                                    drawCircle(
+                                        color = baseColor,
+                                        radius = 4.dp.toPx(),
+                                        center = androidx.compose.ui.geometry.Offset(centerX, yTop)
+                                    )
+                                }
+                            }
+                        } else {
+                            val stepX = w / (points.size - 1)
+
+                            val path = Path()
+                            val fillPath = Path()
+
+                            points.forEachIndexed { idx, pt ->
+                                val x = idx * stepX
+                                val normY = ((pt.value - minVal) / range).toFloat()
+                                val y = h - (normY * (h - 20.dp.toPx())) - 10.dp.toPx()
+
+                                if (idx == 0) {
+                                    path.moveTo(x, y)
+                                    fillPath.moveTo(x, h)
+                                    fillPath.lineTo(x, y)
+                                } else {
+                                    val prevX = (idx - 1) * stepX
+                                    val prevPt = points[idx - 1]
+                                    val prevNormY = ((prevPt.value - minVal) / range).toFloat()
+                                    val prevY = h - (prevNormY * (h - 20.dp.toPx())) - 10.dp.toPx()
+
+                                    val ctrlX1 = prevX + (stepX / 2f)
+                                    val ctrlY1 = prevY
+                                    val ctrlX2 = prevX + (stepX / 2f)
+                                    val ctrlY2 = y
+
+                                    path.cubicTo(ctrlX1, ctrlY1, ctrlX2, ctrlY2, x, y)
+                                    fillPath.cubicTo(ctrlX1, ctrlY1, ctrlX2, ctrlY2, x, y)
+                                }
+
+                                if (idx == points.size - 1) {
+                                    fillPath.lineTo(x, h)
+                                    fillPath.close()
+                                }
                             }
 
-                            if (idx == points.size - 1) {
-                                fillPath.lineTo(x, h)
-                                fillPath.close()
-                            }
-                        }
-
-                        // Draw gradient fill under curve
-                        drawPath(
-                            path = fillPath,
-                            brush = Brush.verticalGradient(
-                                colors = listOf(
-                                    chartColor.copy(alpha = 0.25f),
-                                    chartColor.copy(alpha = 0.01f)
+                            // Draw gradient fill under curve
+                            drawPath(
+                                path = fillPath,
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        chartColor.copy(alpha = 0.25f),
+                                        chartColor.copy(alpha = 0.01f)
+                                    )
                                 )
                             )
-                        )
 
-                        // Draw smooth line
-                        drawPath(
-                            path = path,
-                            color = chartColor,
-                            style = Stroke(width = 2.5.dp.toPx())
-                        )
+                            // Draw smooth line
+                            drawPath(
+                                path = path,
+                                color = chartColor,
+                                style = Stroke(width = 2.5.dp.toPx())
+                            )
 
-                        // If point is touched/hovered, draw vertical indicator and dot
-                        activePoint?.let { active ->
-                            val activeIdx = points.indexOf(active)
-                            if (activeIdx >= 0) {
-                                val activeX = activeIdx * stepX
-                                val normY = ((active.value - minVal) / range).toFloat()
-                                val activeY = h - (normY * (h - 20.dp.toPx())) - 10.dp.toPx()
+                            // If point is touched/hovered, draw vertical indicator and dot
+                            activePoint?.let { active ->
+                                val activeIdx = points.indexOf(active)
+                                if (activeIdx >= 0) {
+                                    val activeX = activeIdx * stepX
+                                    val normY = ((active.value - minVal) / range).toFloat()
+                                    val activeY = h - (normY * (h - 20.dp.toPx())) - 10.dp.toPx()
 
-                                // Vertical dashed line
-                                drawLine(
-                                    color = indicatorColor,
-                                    start = androidx.compose.ui.geometry.Offset(activeX, 0f),
-                                    end = androidx.compose.ui.geometry.Offset(activeX, h),
-                                    strokeWidth = 1.5.dp.toPx(),
-                                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-                                )
+                                    // Vertical dashed line
+                                    drawLine(
+                                        color = indicatorColor,
+                                        start = androidx.compose.ui.geometry.Offset(activeX, 0f),
+                                        end = androidx.compose.ui.geometry.Offset(activeX, h),
+                                        strokeWidth = 1.5.dp.toPx(),
+                                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                                    )
 
-                                // Outer white ring
-                                drawCircle(
-                                    color = Color.White,
-                                    radius = 7.dp.toPx(),
-                                    center = androidx.compose.ui.geometry.Offset(activeX, activeY)
-                                )
-                                // Inner dot
-                                drawCircle(
-                                    color = chartColor,
-                                    radius = 4.5.dp.toPx(),
-                                    center = androidx.compose.ui.geometry.Offset(activeX, activeY)
-                                )
+                                    // Outer white ring
+                                    drawCircle(
+                                        color = Color.White,
+                                        radius = 7.dp.toPx(),
+                                        center = androidx.compose.ui.geometry.Offset(activeX, activeY)
+                                    )
+                                    // Inner dot
+                                    drawCircle(
+                                        color = chartColor,
+                                        radius = 4.5.dp.toPx(),
+                                        center = androidx.compose.ui.geometry.Offset(activeX, activeY)
+                                    )
+                                }
                             }
                         }
                     }
