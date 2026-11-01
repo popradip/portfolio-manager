@@ -135,18 +135,45 @@ class PortfolioRepositoryImpl(
             return Result.failure(IllegalArgumentException("Žiadne uložené výpisy."))
         }
 
-        val parseResults = mutableListOf<BrokerCsvParserRegistry.ParseResult>()
+        val contentsByBroker = mutableMapOf<String, MutableList<String>>()
         for (content in fileContents) {
             try {
                 val result = parserRegistry.parse(content)
-                parseResults.add(result)
+                contentsByBroker.getOrPut(result.brokerName) { mutableListOf() }.add(content)
             } catch (e: Exception) {
                 AppLogger.e("PortfolioRepository", "Failed to parse saved import file: ${e.message}", e)
             }
         }
 
-        if (parseResults.isEmpty()) {
+        if (contentsByBroker.isEmpty()) {
             return Result.failure(IllegalArgumentException("Nepodarilo sa načítať uložené výpisy."))
+        }
+
+        val parseResults = mutableListOf<BrokerCsvParserRegistry.ParseResult>()
+        for ((brokerName, contents) in contentsByBroker) {
+            if (brokerName.equals("Trading 212", ignoreCase = true)) {
+                // For Trading 212, join all contents and parse them together (with trade deduplication)
+                val combinedContent = contents.joinToString("\n")
+                try {
+                    val result = parserRegistry.parse(combinedContent)
+                    parseResults.add(result)
+                } catch (e: Exception) {
+                    AppLogger.e("PortfolioRepository", "Failed to parse combined Trading 212 files: ${e.message}", e)
+                }
+            } else {
+                // For other brokers, parse the latest file
+                val latestContent = contents.last()
+                try {
+                    val result = parserRegistry.parse(latestContent)
+                    parseResults.add(result)
+                } catch (e: Exception) {
+                    AppLogger.e("PortfolioRepository", "Failed to parse $brokerName file: ${e.message}", e)
+                }
+            }
+        }
+
+        if (parseResults.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Nepodarilo sa spracovať žiadny výpis."))
         }
 
         val mergedData = mergePortfolioData(parseResults)
@@ -205,34 +232,40 @@ class PortfolioRepositoryImpl(
                 .map { it.trim() }
                 .filter { it.isNotBlank() }
 
-            // Filter out existing saved files that parse to the SAME brokerName as newParseResult
+            // Filter existing contents:
+            // For Trading 212, keep existing saved files unless identical to new input.
+            // For other brokers, replace previous files for that broker.
             val filteredContents = existingContents.filter { content ->
                 try {
                     val existingResult = parserRegistry.parse(content)
-                    !existingResult.brokerName.equals(newParseResult.brokerName, ignoreCase = true)
+                    if (existingResult.brokerName.equals(newParseResult.brokerName, ignoreCase = true)) {
+                        if (newParseResult.brokerName.equals("Trading 212", ignoreCase = true)) {
+                            content.trim() != csvContent.trim()
+                        } else {
+                            false
+                        }
+                    } else {
+                        true
+                    }
                 } catch (_: Exception) {
                     true
                 }
             }
 
-            val updatedContents = filteredContents + csvContent
+            val updatedContents = filteredContents + csvContent.trim()
             val combinedSavedString = updatedContents.joinToString(IMPORT_DELIMITER)
 
-            val allParseResults = updatedContents.mapNotNull { content ->
-                try {
-                    parserRegistry.parse(content)
-                } catch (_: Exception) {
-                    null
-                }
-            }
-
-            val mergedPortfolio = mergePortfolioData(allParseResults)
+            val parseSavedResult = parseSavedImportedFiles(combinedSavedString)
+            val mergedPortfolio = parseSavedResult.getOrThrow()
             val enrichedData = marketDataRepository.enrichPortfolioWithLivePrices(mergedPortfolio)
 
             preferencesRepository?.saveImportedCsv(combinedSavedString)
             cachedPortfolioData = enrichedData
 
-            val brokerNames = allParseResults.map { it.brokerName }.distinct()
+            val brokerNames = updatedContents.mapNotNull { content ->
+                try { parserRegistry.parse(content).brokerName } catch (_: Exception) { null }
+            }.distinct()
+
             val displayBrokerName = if (brokerNames.size > 1) {
                 "spojených výpisov (" + brokerNames.joinToString(", ") + ")"
             } else {

@@ -96,6 +96,7 @@ class Trading212CsvParser : BrokerCsvParser {
 
         // 2. Accumulate transactions
         val holdingsMap = mutableMapOf<String, HoldingAccumulator>()
+        val seenTransactionIds = mutableSetOf<String>()
         var totalSpentOnBuysEur = 0.0
         var totalReceivedFromSellsEur = 0.0
         var totalDepositsEur = 0.0
@@ -103,7 +104,35 @@ class Trading212CsvParser : BrokerCsvParser {
         var totalDividendsEur = 0.0
 
         for (i in (headerIdx + 1) until lines.size) {
-            val tokens = parseCsvLine(lines[i])
+            val line = lines[i]
+            val tokens = parseCsvLine(line)
+            val lowerTokens = tokens.map { it.lowercase().trim() }
+
+            // Re-evaluate header if another CSV file header line is encountered (e.g. concatenated CSVs)
+            if (lowerTokens.contains("action") && (lowerTokens.contains("isin") || lowerTokens.contains("ticker"))) {
+                for ((colIdx, headerToken) in lowerTokens.withIndex()) {
+                    when (headerToken) {
+                        "action" -> actionIdx = colIdx
+                        "isin" -> isinIdx = colIdx
+                        "ticker" -> tickerIdx = colIdx
+                        "name" -> nameIdx = colIdx
+                        "id" -> idIdx = colIdx
+                        "no. of shares", "shares" -> sharesIdx = colIdx
+                        "price / share" -> priceIdx = colIdx
+                        "currency (price / share)" -> priceCurrIdx = colIdx
+                        "exchange rate" -> fxIdx = colIdx
+                        "total" -> totalIdx = colIdx
+                        "currency conversion fee" -> feeIdx = colIdx
+                        else -> {
+                            if (headerToken.startsWith("time")) timeIdx = colIdx
+                            else if (priceIdx == -1 && headerToken.contains("price") && !headerToken.contains("currency")) priceIdx = colIdx
+                            else if (sharesIdx == -1 && headerToken.contains("shares")) sharesIdx = colIdx
+                        }
+                    }
+                }
+                continue
+            }
+
             if (tokens.size <= actionIdx) continue
 
             val action = tokens.getOrNull(actionIdx)?.trim() ?: ""
@@ -114,13 +143,20 @@ class Trading212CsvParser : BrokerCsvParser {
             var ticker = tokens.getOrNull(tickerIdx)?.trim() ?: ""
             if (ticker.isBlank()) ticker = isin
             val name = tokens.getOrNull(nameIdx)?.trim()?.removeSurrounding("\"")?.ifEmpty { ticker } ?: ticker
-            val id = tokens.getOrNull(idIdx)?.trim() ?: "T212_TX_$i"
+            val rawId = tokens.getOrNull(idIdx)?.trim() ?: ""
             val shares = parseDoubleSafe(tokens.getOrNull(sharesIdx))
             val pricePerShare = parseDoubleSafe(tokens.getOrNull(priceIdx))
             val priceCurrency = tokens.getOrNull(priceCurrIdx)?.trim()?.ifEmpty { "EUR" } ?: "EUR"
             val exchangeRate = parseDoubleSafe(tokens.getOrNull(fxIdx)).let { if (it > 0) it else 1.0 }
             val totalCost = parseDoubleSafe(tokens.getOrNull(totalIdx))
             val fee = parseDoubleSafe(tokens.getOrNull(feeIdx))
+
+            val id = rawId.ifBlank { "$timeStr|$ticker|$action|$shares|$totalCost" }
+
+            // Skip duplicate transactions
+            if (!seenTransactionIds.add(id)) {
+                continue
+            }
 
             val actionLower = action.lowercase()
 

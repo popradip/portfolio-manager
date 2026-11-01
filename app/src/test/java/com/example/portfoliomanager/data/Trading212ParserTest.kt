@@ -64,4 +64,30 @@ class Trading212ParserTest {
         // Verify net liquidation is positive
         assertTrue("Net liquidation should be > 0", portfolioData.accountSummary.netLiquidation > 0.0)
     }
+
+    @Test
+    fun testIncrementalImportAndDeduplication() {
+        val csvHeader = "Action,Time (UTC),ISIN,Ticker,Name,ID,No. of shares,Price / share,Currency (Price / share),Exchange rate,Total,Currency (Total)\n"
+        val csvBatch1 = csvHeader +
+                "Market buy,2024-12-17 14:30:01+00:00,US5949181045,MSFT,\"Microsoft\",EOF10001,1.0,400.0,USD,1.0,400.0,\"EUR\"\n" +
+                "Market buy,2024-12-17 14:30:01+00:00,US0378331005,AAPL,\"Apple\",EOF10002,2.0,200.0,USD,1.0,400.0,\"EUR\"\n"
+
+        // Batch 2 contains one duplicate (EOF10001) and one new transaction (EOF10003 for MSFT)
+        val csvBatch2 = csvHeader +
+                "Market buy,2024-12-17 14:30:01+00:00,US5949181045,MSFT,\"Microsoft\",EOF10001,1.0,400.0,USD,1.0,400.0,\"EUR\"\n" +
+                "Market buy,2025-01-15 10:00:00+00:00,US5949181045,MSFT,\"Microsoft\",EOF10003,0.5,420.0,USD,1.0,210.0,\"EUR\"\n"
+
+        val combinedCsv = csvBatch1 + "\n" + csvBatch2
+        val portfolioData = parser.parse(combinedCsv)
+
+        val msftPos = portfolioData.positions.find { it.symbol == "MSFT" }
+        assertNotNull("MSFT position should exist", msftPos)
+        // 1.0 from batch 1 + 0.5 from batch 2 = 1.5 shares total (EOF10001 from batch 2 was skipped as duplicate)
+        assertEquals(1.5, msftPos!!.quantity, 0.0001)
+        assertEquals(2, msftPos.trades.size) // EOF10001 and EOF10003
+
+        val aaplPos = portfolioData.positions.find { it.symbol == "AAPL" }
+        assertNotNull("AAPL position should exist", aaplPos)
+        assertEquals(2.0, aaplPos!!.quantity, 0.0001)
+    }
 }
