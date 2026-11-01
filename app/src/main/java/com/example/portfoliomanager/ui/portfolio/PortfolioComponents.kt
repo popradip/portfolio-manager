@@ -469,13 +469,24 @@ fun ExpandableBalancesCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Štatistiky portfólia",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                Column {
+                    Text(
+                        text = "Štatistiky portfólia",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
                     )
-                )
+                    if (!isExpanded && (realizedPnl != 0.0 || totalPnl != 0.0)) {
+                        Text(
+                            text = "Realizovaný P&L: ${realizedPnl.toSignedCurrencyString(currency)}",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (realizedPnl >= 0) PositiveGreen else NegativeRed
+                            )
+                        )
+                    }
+                }
 
                 IconButton(onClick = onToggleExpand) {
                     Icon(

@@ -55,7 +55,7 @@ class MultiBrokerImportTest {
 
             val (brokerTitle2, combinedData2) = result2.getOrThrow()
             assertTrue("Title should mention IBKR & XTB", brokerTitle2.contains("Interactive Brokers") || brokerTitle2.contains("spojených"))
-            assertEquals(27, combinedData2.positions.size)
+            assertEquals(31, combinedData2.positions.size)
         }
 
         // 3. Import Trading 212 CSV

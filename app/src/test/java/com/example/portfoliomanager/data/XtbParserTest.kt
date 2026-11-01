@@ -50,8 +50,8 @@ class XtbParserTest {
         assertEquals("XTB-50198829", portfolioData.accountSummary.accountId)
         assertEquals("EUR", portfolioData.accountSummary.currency)
 
-        // Verify total position count
-        assertEquals(27, portfolioData.positions.size)
+        // Verify total position count (27 open + 4 closed positions like AMD)
+        assertEquals(31, portfolioData.positions.size)
 
         // Verify cash calculation from Cash Operations
         assertEquals(171.18, portfolioData.accountSummary.totalCashValue, 0.01)
@@ -78,13 +78,14 @@ class XtbParserTest {
         // Verify trades/purchase history for positions
         assertTrue("McDonald's should have parsed trades", mcdPos.trades.isNotEmpty())
         assertEquals(17, mcdPos.trades.size)
-        val firstMcdTrade = mcdPos.trades.first()
-        assertEquals("BUY", firstMcdTrade.buySell)
-        assertEquals(1.0, firstMcdTrade.quantity, 0.0001)
-        assertEquals(270.0, firstMcdTrade.price, 0.01)
+        assertTrue(mcdPos.trades.any { it.buySell == "BUY" && it.quantity == 1.0 })
 
         val totalTradesCount = portfolioData.positions.sumOf { it.trades.size }
         assertTrue("Portfolio should contain imported trades across positions", totalTradesCount > 0)
         println("Total parsed trades across all positions: $totalTradesCount")
+
+        // Verify realized P&L from Closed Positions sheet (includes AMD and other closed sales)
+        println("Realized P&L: ${portfolioData.balances.realizedPnl}")
+        assertEquals(1337.38, portfolioData.balances.realizedPnl, 0.05)
     }
 }

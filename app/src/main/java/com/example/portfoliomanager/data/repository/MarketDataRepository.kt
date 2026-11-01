@@ -108,23 +108,26 @@ class MarketDataRepositoryImpl(
             val totalCash = portfolioData.balances.totalCash
             val updatedNetLiquidation = posMarketValueSum + totalCash
 
-            val updatedTotalPnlSum = updatedPositions.sumOf { it.totalPnl }
+            val updatedUnrealizedPnlSum = updatedPositions.sumOf { it.totalPnl }
             val updatedDailyPnlSum = updatedPositions.sumOf { it.dailyPnl }
+            val realizedPnl = portfolioData.balances.realizedPnl
+            val combinedTotalPnl = updatedUnrealizedPnlSum + realizedPnl
 
             val updatedDailyPnlPct = if (updatedNetLiquidation > 0.0) (updatedDailyPnlSum / updatedNetLiquidation) * 100.0 else 0.0
-            val updatedTotalPnlPct = if (updatedNetLiquidation > 0.0) (updatedTotalPnlSum / updatedNetLiquidation) * 100.0 else 0.0
+            val updatedTotalPnlPct = if (updatedNetLiquidation > 0.0) (combinedTotalPnl / updatedNetLiquidation) * 100.0 else 0.0
 
             val updatedAccountSummary = portfolioData.accountSummary.copy(
                 currency = targetCurrency,
                 netLiquidation = updatedNetLiquidation,
                 dailyPnl = updatedDailyPnlSum,
                 dailyPnlPercentage = updatedDailyPnlPct,
-                totalPnl = updatedTotalPnlSum,
+                totalPnl = combinedTotalPnl,
                 totalPnlPercentage = updatedTotalPnlPct
             )
 
             val updatedBalances = portfolioData.balances.copy(
-                unrealizedPnl = updatedTotalPnlSum,
+                unrealizedPnl = updatedUnrealizedPnlSum,
+                realizedPnl = realizedPnl,
                 netLiquidation = updatedNetLiquidation
             )
 

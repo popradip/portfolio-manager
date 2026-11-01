@@ -13,6 +13,16 @@ import java.io.ByteArrayInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
 
+private data class ClosedPositionInfo(
+    val ticker: String,
+    val instrumentName: String,
+    val categoryStr: String,
+    var totalProfit: Double = 0.0,
+    var totalPurchaseVal: Double = 0.0,
+    var totalSaleVal: Double = 0.0,
+    val trades: MutableList<Trade> = mutableListOf()
+)
+
 /**
  * Parser for XTB statement exports in both XLSX (OpenXML format) and CSV formats.
  */
@@ -121,17 +131,35 @@ class XtbCsvParser : BrokerCsvParser {
         val sheetMap = parseSheetMap(entries["xl/workbook.xml"], entries["xl/_rels/workbook.xml.rels"])
 
         val openPositionsSheetPath = sheetMap["Open Positions"]
+            ?: sheetMap.entries.firstOrNull { (name, _) ->
+                val lower = name.lowercase()
+                lower.contains("open") || lower.contains("otvorene") || lower.contains("otvorené")
+            }?.value
             ?: entries.keys.firstOrNull { it.contains("worksheets/sheet3.xml") }
             ?: entries.keys.firstOrNull { it.contains("worksheets/sheet") }
             ?: throw IllegalArgumentException("XLSX neobsahuje hárok 'Open Positions'.")
 
         val cashOperationsSheetPath = sheetMap["Cash Operations"]
+            ?: sheetMap.entries.firstOrNull { (name, _) ->
+                val lower = name.lowercase()
+                lower.contains("cash") || lower.contains("hotovost") || lower.contains("hotovosť") || lower.contains("operacie") || lower.contains("operácie")
+            }?.value
             ?: entries.keys.firstOrNull { it.contains("worksheets/sheet2.xml") }
+
+        val closedPositionsSheetPath = sheetMap["Closed Positions"]
+            ?: sheetMap.entries.firstOrNull { (name, _) ->
+                val lower = name.lowercase()
+                lower.contains("closed") || lower.contains("zatvorene") || lower.contains("zatvorené") ||
+                lower.contains("uzavrete") || lower.contains("uzavreté") || lower.contains("uzavrene") ||
+                lower.contains("uzavřené") || lower.contains("zamknięte")
+            }?.value
+            ?: entries.keys.firstOrNull { it !in listOfNotNull(openPositionsSheetPath, cashOperationsSheetPath) && it.startsWith("xl/worksheets/") }
 
         val openPosRows = parseSheetRows(entries[openPositionsSheetPath], sharedStrings)
         val cashOpRows = cashOperationsSheetPath?.let { parseSheetRows(entries[it], sharedStrings) } ?: emptyList()
+        val closedPosRows = closedPositionsSheetPath?.let { parseSheetRows(entries[it], sharedStrings) } ?: emptyList()
 
-        println("DEBUG openPosRows size: ${openPosRows.size}, cashOpRows size: ${cashOpRows.size}")
+        println("DEBUG openPosRows size: ${openPosRows.size}, cashOpRows size: ${cashOpRows.size}, closedPosRows size: ${closedPosRows.size}")
 
         var accountId = "50198829"
         var currency = "EUR"
@@ -257,16 +285,169 @@ class XtbCsvParser : BrokerCsvParser {
             }
         }
 
+        // Process Closed Positions sheet for closed trades & realized P&L
+        val closedTickerMap = mutableMapOf<String, ClosedPositionInfo>()
+        var totalRealizedPnl = 0.0
+
+        val closedHeaderIdx = closedPosRows.indexOfFirst { r ->
+            r.any { cell ->
+                val lower = cell.lowercase()
+                lower.contains("profit") || lower.contains("zisk") || lower.contains("pnl") ||
+                lower.contains("close price") || lower.contains("zatvaracia") || lower.contains("uzatvaracia")
+            }
+        }
+
+        if (closedHeaderIdx != -1) {
+            val closedHeader = closedPosRows[closedHeaderIdx].map { it.lowercase() }
+            val instrumentIdx = closedHeader.indexOfFirst { it.contains("instrument") || it.contains("position") }.let { if (it != -1) it else 0 }
+            val tickerIdx = closedHeader.indexOfFirst { it.contains("ticker") || it.contains("symbol") }.let { if (it != -1) it else 1 }
+            val catIdx = closedHeader.indexOfFirst { it.contains("category") }.let { if (it != -1) it else 2 }
+            val typeIdx = closedHeader.indexOfFirst { it.contains("type") }.let { if (it != -1) it else 3 }
+            val volIdx = closedHeader.indexOfFirst { it.contains("volume") || it.contains("shares") }.let { if (it != -1) it else 4 }
+            val openPriceIdx = closedHeader.indexOfFirst { it.contains("open price") }.let { if (it != -1) it else 5 }
+            val openTimeIdx = closedHeader.indexOfFirst { it.contains("open time") || it.contains("open date") }.let { if (it != -1) it else 6 }
+            val closePriceIdx = closedHeader.indexOfFirst { it.contains("close price") }.let { if (it != -1) it else 7 }
+            val closeTimeIdx = closedHeader.indexOfFirst { it.contains("close time") || it.contains("close date") }.let { if (it != -1) it else 8 }
+            val netPnlIdx = closedHeader.indexOfFirst { col ->
+                col.contains("net profit") || col.contains("profit/loss") || col.contains("čistý zisk") ||
+                col.contains("cisty zisk") || col.contains("zysk netto") || col.contains("nettogewinn") ||
+                col.contains("profit") || col.contains("zisk") || col.contains("pnl")
+            }.let { if (it != -1) it else 10 }
+            val purchaseValIdx = closedHeader.indexOfFirst { it.contains("purchase value") || it.contains("buy value") }.let { if (it != -1) it else 12 }
+            val saleValIdx = closedHeader.indexOfFirst { it.contains("sale value") || it.contains("sell value") }.let { if (it != -1) it else 13 }
+            val commIdx = closedHeader.indexOfFirst { it.contains("commission") || it == "fee" }.let { if (it != -1) it else 16 }
+            val posIdIdx = closedHeader.indexOfFirst { it.contains("position id") || it == "id" }.let { if (it != -1) it else 23 }
+
+            for (r in closedPosRows.drop(closedHeaderIdx + 1)) {
+                if (r.isEmpty()) continue
+                val firstCell = r[0].trim().lowercase()
+
+                if (firstCell.contains("profit") || firstCell.contains("total") || firstCell.contains("súčet") ||
+                    firstCell.contains("spolu") || firstCell.contains("celkom") || firstCell.contains("zisk")) {
+                    val summaryVal = if (netPnlIdx != -1 && r.size > netPnlIdx) r[netPnlIdx].cleanDoubleOrNull() else null
+                    val fallbackVal = r.drop(1).firstNotNullOfOrNull { it.cleanDoubleOrNull() }
+                    if (summaryVal != null && summaryVal != 0.0) {
+                        totalRealizedPnl = summaryVal
+                    } else if (fallbackVal != null && fallbackVal != 0.0) {
+                        totalRealizedPnl = fallbackVal
+                    }
+                    continue
+                }
+
+                if (r.size <= maxOf(tickerIdx, volIdx)) continue
+
+                val ticker = r.getOrElse(tickerIdx) { "" }.trim()
+                if (ticker.isBlank()) continue
+
+                val instrumentName = r.getOrElse(instrumentIdx) { "" }.trim().ifBlank { ticker }
+                val catStr = r.getOrElse(catIdx) { "" }.trim()
+                val vol = r.getOrElse(volIdx) { "" }.cleanDoubleOrNull() ?: 0.0
+                val openPrice = r.getOrElse(openPriceIdx) { "" }.cleanDoubleOrNull() ?: 0.0
+                val openTimeRaw = r.getOrElse(openTimeIdx) { "" }
+                val openTime = parseExcelDate(openTimeRaw)
+                val closePrice = r.getOrElse(closePriceIdx) { "" }.cleanDoubleOrNull() ?: 0.0
+                val closeTimeRaw = r.getOrElse(closeTimeIdx) { "" }
+                val closeTime = parseExcelDate(closeTimeRaw)
+                val profit = r.getOrElse(netPnlIdx) { "" }.cleanDoubleOrNull() ?: 0.0
+                val purchaseVal = r.getOrElse(purchaseValIdx) { "" }.cleanDoubleOrNull() ?: (vol * openPrice)
+                val saleVal = r.getOrElse(saleValIdx) { "" }.cleanDoubleOrNull() ?: (vol * closePrice)
+                val commission = r.getOrElse(commIdx) { "" }.cleanDoubleOrNull() ?: 0.0
+                val posId = r.getOrElse(posIdIdx) { "" }.trim()
+
+                if (vol <= 0.0) continue
+
+                val sellTradeId = if (posId.isNotBlank()) "xtb_sell_$posId" else "xtb_sell_${ticker}_${closeTime}"
+                val sellTrade = Trade(
+                    id = sellTradeId,
+                    symbol = ticker,
+                    date = closeTime,
+                    buySell = "SELL",
+                    quantity = vol,
+                    price = closePrice,
+                    commission = commission,
+                    totalAmount = saleVal
+                )
+
+                val buyTradeId = if (posId.isNotBlank()) "xtb_buy_$posId" else "xtb_buy_${ticker}_${openTime}"
+                val buyTrade = Trade(
+                    id = buyTradeId,
+                    symbol = ticker,
+                    date = openTime,
+                    buySell = "BUY",
+                    quantity = vol,
+                    price = openPrice,
+                    commission = 0.0,
+                    totalAmount = purchaseVal
+                )
+
+                tradesMap.getOrPut(ticker.uppercase()) { mutableListOf() }.add(sellTrade)
+                tradesMap.getOrPut(ticker.uppercase()) { mutableListOf() }.add(buyTrade)
+
+                val closedInfo = closedTickerMap.getOrPut(ticker.uppercase()) {
+                    ClosedPositionInfo(
+                        ticker = ticker,
+                        instrumentName = instrumentName,
+                        categoryStr = catStr
+                    )
+                }
+                closedInfo.totalProfit += profit
+                closedInfo.totalPurchaseVal += purchaseVal
+                closedInfo.totalSaleVal += saleVal
+                closedInfo.trades.add(sellTrade)
+                closedInfo.trades.add(buyTrade)
+            }
+        }
+
+        if (totalRealizedPnl == 0.0 && closedTickerMap.isNotEmpty()) {
+            totalRealizedPnl = closedTickerMap.values.sumOf { it.totalProfit }
+        }
+
+        // Add closed positions (quantity = 0) for tickers that are NOT in open positions
+        for ((upperTicker, info) in closedTickerMap) {
+            val existsInOpen = positions.any { it.symbol.uppercase() == upperTicker }
+            if (!existsInOpen) {
+                val assetCategory = mapXtbCategory(info.categoryStr, info.ticker)
+                val posCurrency = detectCurrencyFromTicker(info.ticker, currency)
+                val pnlPct = if (info.totalPurchaseVal > 0.0) (info.totalProfit / info.totalPurchaseVal) * 100.0 else 0.0
+
+                val closedPosition = Position(
+                    id = "xtb_closed_pos_${info.ticker}",
+                    symbol = info.ticker,
+                    description = info.instrumentName,
+                    assetCategory = assetCategory,
+                    quantity = 0.0,
+                    costBasisPrice = if (info.trades.isNotEmpty()) info.trades.filter { it.buySell == "BUY" }.map { it.price }.average().let { if (it.isNaN()) 0.0 else it } else 0.0,
+                    markPrice = if (info.trades.isNotEmpty()) info.trades.filter { it.buySell == "SELL" }.map { it.price }.average().let { if (it.isNaN()) 0.0 else it } else 0.0,
+                    marketValue = 0.0,
+                    dailyPnl = 0.0,
+                    totalPnl = info.totalProfit,
+                    pnlPercentage = pnlPct,
+                    sector = getSectorForSymbol(info.ticker, assetCategory),
+                    country = getCountryForSymbol(info.ticker),
+                    currency = posCurrency,
+                    trades = info.trades.sortedByDescending { it.date }
+                )
+                positions.add(closedPosition)
+            }
+        }
+
         val positionsWithTrades = positions.map { pos ->
             val symbolTrades = tradesMap[pos.symbol.uppercase()] ?: emptyList()
-            pos.copy(trades = symbolTrades)
+            if (symbolTrades.isNotEmpty()) {
+                val mergedTrades = (pos.trades + symbolTrades).distinctBy { it.id }.sortedByDescending { it.date }
+                pos.copy(trades = mergedTrades)
+            } else {
+                pos
+            }
         }
 
         val totalMarketValue = positionsWithTrades.sumOf { it.marketValue }
         val netLiquidation = totalMarketValue + totalCash
-        val totalPnl = positionsWithTrades.sumOf { it.totalPnl }
-        val totalCostBasis = positionsWithTrades.sumOf { it.costBasisPrice * it.quantity }
-        val totalPnlPct = if (totalCostBasis > 0.0) (totalPnl / totalCostBasis) * 100.0 else 0.0
+        val openPositionsList = positionsWithTrades.filter { it.quantity > 0.0 }
+        val totalUnrealizedPnl = openPositionsList.sumOf { it.totalPnl }
+        val combinedTotalPnl = totalUnrealizedPnl + totalRealizedPnl
+        val totalCostBasis = openPositionsList.sumOf { it.costBasisPrice * it.quantity }
+        val totalPnlPct = if (totalCostBasis > 0.0) (combinedTotalPnl / totalCostBasis) * 100.0 else 0.0
 
         return PortfolioData(
             accountSummary = AccountSummary(
@@ -280,15 +461,15 @@ class XtbCsvParser : BrokerCsvParser {
                 buyingPower = totalCash,
                 dailyPnl = 0.0,
                 dailyPnlPercentage = 0.0,
-                totalPnl = totalPnl,
+                totalPnl = combinedTotalPnl,
                 totalPnlPercentage = totalPnlPct
             ),
             balances = Balances(
                 totalCash = totalCash,
                 settledCash = totalCash,
                 accruedCash = 0.0,
-                unrealizedPnl = totalPnl,
-                realizedPnl = 0.0,
+                unrealizedPnl = totalUnrealizedPnl,
+                realizedPnl = totalRealizedPnl,
                 netLiquidation = netLiquidation
             ),
             marginSummary = MarginRequirements(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
@@ -543,6 +724,18 @@ class XtbCsvParser : BrokerCsvParser {
             index = index * 26 + (ch - 'A' + 1)
         }
         return index - 1
+    }
+
+    private fun String.cleanDoubleOrNull(): Double? {
+        if (this.isBlank()) return null
+        val cleaned = this.replace(" ", "")
+            .replace("\u00A0", "")
+            .replace("EUR", "", ignoreCase = true)
+            .replace("USD", "", ignoreCase = true)
+            .replace("€", "")
+            .replace("$", "")
+            .replace(',', '.')
+        return cleaned.toDoubleOrNull()
     }
 
     private fun mapXtbCategory(catStr: String, ticker: String): AssetCategory {

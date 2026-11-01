@@ -54,7 +54,7 @@ data class PortfolioUiState(
     val selectedBreakdownTab: BreakdownTab = BreakdownTab.INDUSTRY,
     val selectedMarginTab: MarginTab = MarginTab.OVERNIGHT,
     val selectedBottomNavTab: BottomNavTab = BottomNavTab.HOME,
-    val isBalancesExpanded: Boolean = false,
+    val isBalancesExpanded: Boolean = true,
     val isMarginExpanded: Boolean = false,
     val expandedPositionIds: Set<String> = emptySet(),
     val isSettingsDialogOpen: Boolean = false,
