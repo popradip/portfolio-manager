@@ -30,6 +30,8 @@ class MarketDataRepositoryImpl(
         try {
             // Fetch live prices for all distinct positions in parallel
             val distinctSymbols = portfolioData.positions.map { it.symbol }.distinct()
+            AppLogger.d("MarketDataRepository", "Enriching ${portfolioData.positions.size} positions (${distinctSymbols.joinToString()}) with Yahoo Finance live prices...")
+
             val marketDataDeferreds = distinctSymbols.map { symbol ->
                 async { symbol to yahooApiClient.fetchMarketData(symbol) }
             }
@@ -37,6 +39,8 @@ class MarketDataRepositoryImpl(
             val marketDataMap = marketDataDeferreds.awaitAll()
                 .mapNotNull { (sym, data) -> if (data != null) sym to data else null }
                 .toMap()
+
+            AppLogger.d("MarketDataRepository", "Received live market data for ${marketDataMap.size} of ${distinctSymbols.size} symbols.")
 
             if (marketDataMap.isEmpty()) {
                 return@coroutineScope portfolioData

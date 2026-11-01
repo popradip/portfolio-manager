@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -59,6 +61,7 @@ fun PortfolioScreen(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PortfolioScreenContent(
     uiState: PortfolioUiState,
@@ -103,9 +106,14 @@ fun PortfolioScreenContent(
                     CircularProgressIndicator(color = DarkPill)
                 }
             } else {
-                LazyColumn(
+                PullToRefreshBox(
+                    isRefreshing = uiState.isRefreshing,
+                    onRefresh = onRefreshData,
                     modifier = Modifier.fillMaxSize()
                 ) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
                     // Top Bar Header
                     item {
                         TopHeaderAndTabs(
@@ -179,6 +187,7 @@ fun PortfolioScreenContent(
                     }
                 }
             }
+        }
 
             // CSV Import Modal Dialog
             IbkrSettingsDialog(

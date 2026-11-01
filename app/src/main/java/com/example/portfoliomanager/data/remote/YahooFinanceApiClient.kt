@@ -53,11 +53,15 @@ open class YahooFinanceApiClient(
 
     private fun fetchChartDataForSymbol(originalSymbol: String, yahooSymbol: String): YahooMarketData? {
         val url = "https://query1.finance.yahoo.com/v8/finance/chart/$yahooSymbol?interval=1d&range=1mo"
+        AppLogger.d("YahooFinanceApiClient", "Fetching live market data for $originalSymbol ($yahooSymbol)...")
         val request = Request.Builder().url(url).build()
 
         return try {
             val response = okHttpClient.newCall(request).execute()
-            if (!response.isSuccessful) return null
+            if (!response.isSuccessful) {
+                AppLogger.d("YahooFinanceApiClient", "HTTP ${response.code} response for $yahooSymbol")
+                return null
+            }
 
             val bodyString = response.body?.string() ?: return null
             val jsonRoot = JSONObject(bodyString)
@@ -74,6 +78,8 @@ open class YahooFinanceApiClient(
             val previousClose = metaObj.optDouble("previousClose", metaObj.optDouble("chartPreviousClose", currentPrice))
             val dailyChange = currentPrice - previousClose
             val dailyChangePercentage = if (previousClose > 0.0) (dailyChange / previousClose) * 100.0 else 0.0
+
+            AppLogger.d("YahooFinanceApiClient", "Successfully fetched $originalSymbol ($yahooSymbol): price=$currentPrice, change=$dailyChange")
 
             val sparklinePoints = mutableListOf<Double>()
             val indicatorsObj = resultObj.optJSONObject("indicators")
