@@ -78,6 +78,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -1294,6 +1295,7 @@ fun YourAssetsSection(
     modifier: Modifier = Modifier
 ) {
     var isSearchVisible by remember { mutableStateOf(true) }
+    var isSearchFocused by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -1353,13 +1355,23 @@ fun YourAssetsSection(
 
         AnimatedVisibility(
             visible = isSearchVisible,
+            modifier = Modifier.fillMaxWidth(),
             enter = expandVertically() + fadeIn(),
             exit = shrinkVertically() + fadeOut()
         ) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = onSearchQueryChanged,
-                placeholder = { Text("Hľadať podľa symbolu, názvu alebo sektora...", color = TextSecondary) },
+                placeholder = if (!isSearchFocused && searchQuery.isEmpty()) {
+                    {
+                        Text(
+                            text = "Hľadať podľa symbolu, názvu alebo sektora...",
+                            color = TextSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                } else null,
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Rounded.Search,
@@ -1392,6 +1404,7 @@ fun YourAssetsSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .onFocusChanged { isSearchFocused = it.isFocused }
             )
         }
 
