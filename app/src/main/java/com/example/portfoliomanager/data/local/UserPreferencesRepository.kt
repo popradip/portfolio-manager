@@ -23,6 +23,7 @@ open class UserPreferencesRepository(private val context: Context? = null) {
         private val IBKR_TOKEN_KEY = stringPreferencesKey("ibkr_token")
         private val IBKR_QUERY_ID_KEY = stringPreferencesKey("ibkr_query_id")
         private val IMPORTED_CSV_KEY = stringPreferencesKey("imported_csv_content")
+        private val MANUAL_TRADES_KEY = stringPreferencesKey("manual_trades_json")
 
         @Volatile
         private var INSTANCE: UserPreferencesRepository? = null
@@ -43,6 +44,10 @@ open class UserPreferencesRepository(private val context: Context? = null) {
 
     open val importedCsvFlow: Flow<String?> = context?.dataStore?.data?.map { preferences ->
         preferences[IMPORTED_CSV_KEY]?.ifBlank { null }
+    } ?: flowOf(null)
+
+    open val manualTradesFlow: Flow<String?> = context?.dataStore?.data?.map { preferences ->
+        preferences[MANUAL_TRADES_KEY]?.ifBlank { null }
     } ?: flowOf(null)
 
     open suspend fun saveCredentials(token: String, queryId: String) {
@@ -68,6 +73,18 @@ open class UserPreferencesRepository(private val context: Context? = null) {
     open suspend fun clearImportedCsv() {
         context?.dataStore?.edit { preferences ->
             preferences.remove(IMPORTED_CSV_KEY)
+        }
+    }
+
+    open suspend fun saveManualTrades(json: String) {
+        context?.dataStore?.edit { preferences ->
+            preferences[MANUAL_TRADES_KEY] = json
+        }
+    }
+
+    open suspend fun clearManualTrades() {
+        context?.dataStore?.edit { preferences ->
+            preferences.remove(MANUAL_TRADES_KEY)
         }
     }
 }

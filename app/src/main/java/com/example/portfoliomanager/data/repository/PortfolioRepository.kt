@@ -9,6 +9,7 @@ import com.example.portfoliomanager.data.model.MarginRequirements
 import com.example.portfoliomanager.data.model.PortfolioData
 import com.example.portfoliomanager.data.model.Position
 import com.example.portfoliomanager.data.model.SectorAllocation
+import com.example.portfoliomanager.data.model.Trade
 import com.example.portfoliomanager.data.parser.BrokerCsvParserRegistry
 import com.example.portfoliomanager.data.remote.AppLogger
 import com.example.portfoliomanager.data.remote.IbkrFlexApiClient
@@ -16,6 +17,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import org.json.JSONArray
+import org.json.JSONObject
 
 interface PortfolioRepository {
     /**
@@ -66,6 +69,11 @@ interface PortfolioRepository {
      * Attaches user preferences repository for persistence if not already attached.
      */
     fun attachPreferencesRepository(preferencesRepository: UserPreferencesRepository)
+
+    /**
+     * Adds a manual purchase/trade to a position and persists it.
+     */
+    suspend fun addManualTrade(positionId: String, trade: Trade): Result<PortfolioData>
 }
 
 class PortfolioRepositoryImpl(
@@ -96,19 +104,26 @@ class PortfolioRepositoryImpl(
             return Result.success(cachedPortfolioData!!)
         }
 
-        // Check if user has saved CSV/XLSX import(s) first
-        val savedCsv = preferencesRepository?.importedCsvFlow?.first()
-        if (!savedCsv.isNullOrBlank()) {
-            val parseResult = parseSavedImportedFiles(savedCsv)
-            if (parseResult.isSuccess) {
-                val mergedData = parseResult.getOrThrow()
-                val enrichedData = marketDataRepository.enrichPortfolioWithLivePrices(mergedData)
-                cachedPortfolioData = enrichedData
-                return Result.success(enrichedData)
+        val baseResult = run {
+            val savedCsv = preferencesRepository?.importedCsvFlow?.first()
+            if (!savedCsv.isNullOrBlank()) {
+                val parseResult = parseSavedImportedFiles(savedCsv)
+                if (parseResult.isSuccess) {
+                    val mergedData = parseResult.getOrThrow()
+                    Result.success(marketDataRepository.enrichPortfolioWithLivePrices(mergedData))
+                } else {
+                    fetchFromApiOrMock(token, queryId)
+                }
+            } else {
+                fetchFromApiOrMock(token, queryId)
             }
         }
 
-        return fetchFromApiOrMock(token, queryId)
+        return baseResult.map { data ->
+            val dataWithManualTrades = applySavedManualTrades(data)
+            cachedPortfolioData = dataWithManualTrades
+            dataWithManualTrades
+        }
     }
 
     private fun parseSavedImportedFiles(rawSavedString: String): Result<PortfolioData> {
@@ -361,5 +376,131 @@ class PortfolioRepositoryImpl(
 
     override fun getSavedImportedCsv(): Flow<String?> {
         return preferencesRepository?.importedCsvFlow ?: flow { emit(null) }
+    }
+
+    override suspend fun addManualTrade(
+        positionId: String,
+        trade: Trade
+    ): Result<PortfolioData> {
+        return try {
+            val savedJson = preferencesRepository?.manualTradesFlow?.first() ?: ""
+            val existingTrades = deserializeTrades(savedJson)
+            val updatedTrades = existingTrades + trade
+            val newJson = serializeTrades(updatedTrades)
+            preferencesRepository?.saveManualTrades(newJson)
+
+            val baseData = cachedPortfolioData ?: getPortfolioData(forceRefresh = false).getOrNull()
+                ?: MockPortfolioData.getSamplePortfolio()
+
+            val enrichedData = applySavedManualTrades(baseData, listOf(trade))
+            cachedPortfolioData = enrichedData
+            Result.success(enrichedData)
+        } catch (e: Exception) {
+            AppLogger.e("PortfolioRepository", "Failed to add manual trade: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun applySavedManualTrades(data: PortfolioData, extraTrades: List<Trade> = emptyList()): PortfolioData {
+        val savedJson = preferencesRepository?.manualTradesFlow?.first() ?: ""
+        val savedTrades = deserializeTrades(savedJson) + extraTrades
+        if (savedTrades.isEmpty()) return data
+
+        val tradesBySymbol = savedTrades.groupBy { it.symbol.trim().uppercase() }
+
+        val updatedPositions = data.positions.map { pos ->
+            val posSymbol = pos.symbol.trim().uppercase()
+            val posTrades = tradesBySymbol[posSymbol] ?: emptyList()
+            val newTrades = posTrades.filter { t -> pos.trades.none { existing -> existing.id == t.id } }
+            if (newTrades.isEmpty()) {
+                pos
+            } else {
+                val addedQty = newTrades.sumOf { it.quantity }
+                val addedCost = newTrades.sumOf { (it.quantity * it.price) + it.commission }
+                val newQty = pos.quantity + addedQty
+                val oldCost = pos.quantity * pos.costBasisPrice
+                val newTotalCost = oldCost + addedCost
+                val newCostBasisPrice = if (newQty > 0) newTotalCost / newQty else pos.costBasisPrice
+                val newMarketValue = newQty * pos.markPrice
+                val newTotalPnl = newMarketValue - newTotalCost
+                val newPnlPct = if (newTotalCost > 0) (newTotalPnl / newTotalCost) * 100.0 else 0.0
+                val allTrades = pos.trades + newTrades
+
+                pos.copy(
+                    quantity = newQty,
+                    costBasisPrice = newCostBasisPrice,
+                    marketValue = newMarketValue,
+                    totalPnl = newTotalPnl,
+                    pnlPercentage = newPnlPct,
+                    trades = allTrades
+                )
+            }
+        }
+
+        val totalCash = data.balances.totalCash
+        val totalMktVal = updatedPositions.sumOf { it.marketValue }
+        val netLiquidation = totalMktVal + totalCash
+        val totalPnl = updatedPositions.sumOf { it.totalPnl }
+        val totalCostBasis = updatedPositions.sumOf { it.quantity * it.costBasisPrice }
+        val totalPnlPct = if (totalCostBasis > 0.0) (totalPnl / totalCostBasis) * 100.0 else 0.0
+
+        return data.copy(
+            accountSummary = data.accountSummary.copy(
+                netLiquidation = netLiquidation,
+                totalPnl = totalPnl,
+                totalPnlPercentage = totalPnlPct
+            ),
+            balances = data.balances.copy(
+                netLiquidation = netLiquidation,
+                unrealizedPnl = totalPnl
+            ),
+            positions = updatedPositions,
+            sectorAllocations = calculateSectorAllocations(updatedPositions),
+            geographyAllocations = calculateGeographyAllocations(updatedPositions)
+        )
+    }
+
+    private fun serializeTrades(trades: List<Trade>): String {
+        val jsonArray = JSONArray()
+        for (trade in trades) {
+            val obj = JSONObject().apply {
+                put("id", trade.id)
+                put("symbol", trade.symbol)
+                put("date", trade.date)
+                put("buySell", trade.buySell)
+                put("quantity", trade.quantity)
+                put("price", trade.price)
+                put("commission", trade.commission)
+                put("totalAmount", trade.totalAmount)
+            }
+            jsonArray.put(obj)
+        }
+        return jsonArray.toString()
+    }
+
+    private fun deserializeTrades(jsonString: String): List<Trade> {
+        if (jsonString.isBlank()) return emptyList()
+        val list = mutableListOf<Trade>()
+        try {
+            val jsonArray = JSONArray(jsonString)
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                list.add(
+                    Trade(
+                        id = obj.optString("id", "manual_$i"),
+                        symbol = obj.optString("symbol", ""),
+                        date = obj.optString("date", ""),
+                        buySell = obj.optString("buySell", "BUY"),
+                        quantity = obj.optDouble("quantity", 0.0),
+                        price = obj.optDouble("price", 0.0),
+                        commission = obj.optDouble("commission", 0.0),
+                        totalAmount = obj.optDouble("totalAmount", 0.0)
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            AppLogger.e("PortfolioRepository", "Failed to deserialize trades JSON: ${e.message}", e)
+        }
+        return list
     }
 }

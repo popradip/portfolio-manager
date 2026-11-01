@@ -52,6 +52,9 @@ fun PortfolioScreen(
         onClearImportedData = viewModel::clearImportedCsvAndReset,
         onRefreshData = { viewModel.refreshPortfolioData(forceRefresh = true) },
         onBottomNavTabSelected = viewModel::onBottomNavTabSelected,
+        onOpenAddTradeDialog = viewModel::onOpenAddTradeDialog,
+        onDismissAddTradeDialog = viewModel::onDismissAddTradeDialog,
+        onAddManualTrade = viewModel::addManualTrade,
         modifier = modifier
     )
 }
@@ -69,6 +72,9 @@ fun PortfolioScreenContent(
     onClearImportedData: () -> Unit = {},
     onRefreshData: () -> Unit = {},
     onBottomNavTabSelected: (BottomNavTab) -> Unit = {},
+    onOpenAddTradeDialog: (com.example.portfoliomanager.data.model.Position) -> Unit = {},
+    onDismissAddTradeDialog: () -> Unit = {},
+    onAddManualTrade: (positionId: String, quantity: Double, price: Double, date: String, commission: Double) -> Unit = { _, _, _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val portfolioData = uiState.portfolioData ?: MockPortfolioData.getSamplePortfolio()
@@ -165,7 +171,8 @@ fun PortfolioScreenContent(
                                     expandedPositionIds = uiState.expandedPositionIds,
                                     onSearchQueryChanged = onSearchQueryChanged,
                                     onCategoryFilterSelected = onCategoryFilterSelected,
-                                    onTogglePositionExpanded = onTogglePositionExpanded
+                                    onTogglePositionExpanded = onTogglePositionExpanded,
+                                    onAddTradeClick = onOpenAddTradeDialog
                                 )
                             }
                         }
@@ -182,6 +189,17 @@ fun PortfolioScreenContent(
                 onImportCsvClick = onImportCsvClick,
                 onClearImportedData = onClearImportedData,
                 onDismiss = { onToggleSettingsDialog(false) }
+            )
+
+            // Add Manual Purchase Dialog
+            AddTradeDialog(
+                position = uiState.addTradePosition,
+                onDismiss = onDismissAddTradeDialog,
+                onSaveTrade = { quantity, price, date, commission ->
+                    uiState.addTradePosition?.let { pos ->
+                        onAddManualTrade(pos.id, quantity, price, date, commission)
+                    }
+                }
             )
         }
     }

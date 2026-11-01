@@ -198,6 +198,41 @@ class PortfolioViewModelTest {
         assertTrue(viewModel.uiState.value.importSuccessMessage!!.contains("Interactive Brokers"))
         assertFalse(viewModel.uiState.value.isMockMode)
     }
+
+    @Test
+    fun `manual trade dialog opens and dismisses correctly`() {
+        val targetPosition = viewModel.uiState.value.filteredPositions.first()
+        assertNull(viewModel.uiState.value.addTradePosition)
+
+        viewModel.onOpenAddTradeDialog(targetPosition)
+        assertEquals(targetPosition, viewModel.uiState.value.addTradePosition)
+
+        viewModel.onDismissAddTradeDialog()
+        assertNull(viewModel.uiState.value.addTradePosition)
+    }
+
+    @Test
+    fun `addManualTrade updates position quantity and closes dialog`() {
+        val targetPosition = viewModel.uiState.value.filteredPositions.first()
+        viewModel.onOpenAddTradeDialog(targetPosition)
+
+        val initialQuantity = targetPosition.quantity
+        viewModel.addManualTrade(
+            positionId = targetPosition.id,
+            quantity = 5.0,
+            price = 180.0,
+            date = "2025-03-30",
+            commission = 1.0
+        )
+
+        val state = viewModel.uiState.value
+        assertNull(state.addTradePosition)
+
+        val updatedPosition = state.filteredPositions.find { it.id == targetPosition.id }
+        assertNotNull(updatedPosition)
+        assertEquals(initialQuantity + 5.0, updatedPosition!!.quantity, 0.001)
+        assertTrue(updatedPosition.trades.any { it.price == 180.0 && it.quantity == 5.0 })
+    }
 }
 
 private class FakePortfolioRepository(
@@ -247,4 +282,19 @@ private class FakePortfolioRepository(
     override fun getSavedImportedCsv(): Flow<String?> = flowOf(null)
 
     override fun attachPreferencesRepository(preferencesRepository: com.example.portfoliomanager.data.local.UserPreferencesRepository) {}
+
+    override suspend fun addManualTrade(
+        positionId: String,
+        trade: com.example.portfoliomanager.data.model.Trade
+    ): Result<PortfolioData> {
+        val updatedPositions = mockData.positions.map { pos ->
+            if (pos.id == positionId) {
+                val newQty = pos.quantity + trade.quantity
+                val newTrades = pos.trades + trade
+                pos.copy(quantity = newQty, trades = newTrades)
+            } else pos
+        }
+        mockData = mockData.copy(positions = updatedPositions)
+        return Result.success(mockData)
+    }
 }

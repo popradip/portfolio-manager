@@ -374,6 +374,70 @@ class PortfolioViewModel(
     }
 
     /**
+     * Opens dialog to manually add a new purchase/trade for a position.
+     */
+    fun onOpenAddTradeDialog(position: Position) {
+        _uiState.update { it.copy(addTradePosition = position) }
+    }
+
+    /**
+     * Dismisses the manual trade dialog.
+     */
+    fun onDismissAddTradeDialog() {
+        _uiState.update { it.copy(addTradePosition = null) }
+    }
+
+    /**
+     * Adds a manual purchase trade to a position, recalculates portfolio metrics and persists it.
+     */
+    fun addManualTrade(
+        positionId: String,
+        quantity: Double,
+        price: Double,
+        date: String,
+        commission: Double = 0.0
+    ) {
+        val position = _uiState.value.portfolioData?.positions?.find { it.id == positionId }
+            ?: _uiState.value.addTradePosition
+            ?: return
+
+        val tradeId = "manual_${System.currentTimeMillis()}"
+        val totalAmount = (quantity * price) + commission
+        val trade = com.example.portfoliomanager.data.model.Trade(
+            id = tradeId,
+            symbol = position.symbol,
+            date = date.ifBlank {
+                val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")
+                java.time.LocalDate.now().format(formatter)
+            },
+            buySell = "BUY",
+            quantity = quantity,
+            price = price,
+            commission = commission,
+            totalAmount = totalAmount
+        )
+
+        viewModelScope.launch {
+            val result = repository.addManualTrade(positionId, trade)
+            result.fold(
+                onSuccess = { updatedPortfolioData ->
+                    _uiState.update { state ->
+                        state.copy(addTradePosition = null)
+                    }
+                    updatePortfolioDataState(updatedPortfolioData)
+                },
+                onFailure = { throwable ->
+                    _uiState.update { state ->
+                        state.copy(
+                            errorMessage = throwable.message ?: "Chyba pri pridávaní nákupu."
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    /**
      * Clears credentials saved status message.
      */
     fun clearCredentialsMessage() {

@@ -65,5 +65,6 @@ data class PortfolioUiState(
     val credentialsSavedMessage: String? = null,
     val isImportingCsv: Boolean = false,
     val importSuccessMessage: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val addTradePosition: Position? = null
 )
