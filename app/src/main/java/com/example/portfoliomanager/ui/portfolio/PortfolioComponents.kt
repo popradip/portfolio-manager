@@ -115,8 +115,31 @@ import java.util.Locale
 
 // --- Format Utilities ---
 
-fun Double.toCurrencyString(symbol: String = "$"): String {
-    return String.format(Locale.US, "%s%,.2f", symbol, this)
+fun String.toCurrencySymbol(): String {
+    return when (this.uppercase().trim()) {
+        "EUR", "€" -> "€"
+        "USD", "$" -> "$"
+        "GBP", "£" -> "£"
+        "CZK" -> "Kč "
+        "PLN" -> "zł "
+        "CHF" -> "CHF "
+        "CAD" -> "CA$"
+        "AUD" -> "A$"
+        "JPY" -> "¥"
+        "HUF" -> "Ft "
+        else -> if (this.length == 1) this else "$this "
+    }
+}
+
+fun Double.toCurrencyString(currencyCodeOrSymbol: String = "EUR"): String {
+    val raw = currencyCodeOrSymbol.trim()
+    val symbol = raw.toCurrencySymbol()
+    val isSuffix = raw.uppercase() in listOf("CZK", "PLN", "HUF")
+    return if (isSuffix) {
+        String.format(Locale.US, "%,.2f %s", this, symbol.trim())
+    } else {
+        String.format(Locale.US, "%s%,.2f", symbol, this)
+    }
 }
 
 fun Double.toPercentageString(includeSign: Boolean = true): String {
@@ -124,9 +147,17 @@ fun Double.toPercentageString(includeSign: Boolean = true): String {
     return String.format(Locale.US, "%s%.2f%%", sign, this)
 }
 
-fun Double.toSignedCurrencyString(symbol: String = "$"): String {
+fun Double.toSignedCurrencyString(currencyCodeOrSymbol: String = "EUR"): String {
+    val raw = currencyCodeOrSymbol.trim()
+    val symbol = raw.toCurrencySymbol()
     val sign = if (this > 0) "+" else if (this < 0) "-" else ""
-    return String.format(Locale.US, "%s%s%,.2f", sign, symbol, kotlin.math.abs(this))
+    val absVal = kotlin.math.abs(this)
+    val isSuffix = raw.uppercase() in listOf("CZK", "PLN", "HUF")
+    return if (isSuffix) {
+        String.format(Locale.US, "%s%,.2f %s", sign, absVal, symbol.trim())
+    } else {
+        String.format(Locale.US, "%s%s%,.2f", sign, symbol, absVal)
+    }
 }
 
 // --- Top Header & Breakdown Pills ---
@@ -325,6 +356,7 @@ fun AccountSummaryCard(
             val netLiquidation = accountSummary?.netLiquidation ?: 0.0
             val dailyPnl = accountSummary?.dailyPnl ?: 0.0
             val dailyPnlPct = accountSummary?.dailyPnlPercentage ?: 0.0
+            val currency = accountSummary?.currency ?: "EUR"
             val isPositive = dailyPnl >= 0
 
             Row(
@@ -334,7 +366,7 @@ fun AccountSummaryCard(
             ) {
                 Column {
                     Text(
-                        text = netLiquidation.toCurrencyString(),
+                        text = netLiquidation.toCurrencyString(currency),
                         style = MaterialTheme.typography.headlineLarge.copy(
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 30.sp,
@@ -360,7 +392,7 @@ fun AccountSummaryCard(
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = "${dailyPnl.toSignedCurrencyString()} (${dailyPnlPct.toPercentageString()})",
+                                text = "${dailyPnl.toSignedCurrencyString(currency)} (${dailyPnlPct.toPercentageString()})",
                                 style = MaterialTheme.typography.labelMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = if (isPositive) PositiveGreen else NegativeRed
@@ -1133,7 +1165,7 @@ fun PositionCard(
                         style = MaterialTheme.typography.labelSmall.copy(color = TextSecondary)
                     )
                     Text(
-                        text = position.marketValue.toCurrencyString(),
+                        text = position.marketValue.toCurrencyString("EUR"),
                         style = MaterialTheme.typography.titleSmall.copy(
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
@@ -1147,7 +1179,7 @@ fun PositionCard(
                         style = MaterialTheme.typography.labelSmall.copy(color = TextSecondary)
                     )
                     Text(
-                        text = position.dailyPnl.toSignedCurrencyString(),
+                        text = position.dailyPnl.toSignedCurrencyString("EUR"),
                         style = MaterialTheme.typography.titleSmall.copy(
                             fontWeight = FontWeight.Bold,
                             color = if (isPositive) PositiveGreen else NegativeRed
@@ -1161,7 +1193,7 @@ fun PositionCard(
                         style = MaterialTheme.typography.labelSmall.copy(color = TextSecondary)
                     )
                     Text(
-                        text = "${position.totalPnl.toSignedCurrencyString()} (${position.pnlPercentage.toPercentageString()})",
+                        text = "${position.totalPnl.toSignedCurrencyString("EUR")} (${position.pnlPercentage.toPercentageString()})",
                         style = MaterialTheme.typography.titleSmall.copy(
                             fontWeight = FontWeight.Bold,
                             color = if (position.totalPnl >= 0) PositiveGreen else NegativeRed
@@ -1180,17 +1212,20 @@ fun PositionCard(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        MetricDetailItem("Quantity", String.format(Locale.US, "%,.2f", position.quantity))
-                        MetricDetailItem("Cost Basis", position.costBasisPrice.toCurrencyString())
-                        MetricDetailItem("AVG Price", position.markPrice.toCurrencyString())
+                        MetricDetailItem("Množstvo", String.format(Locale.US, "%,.2f ks", position.quantity))
+                        MetricDetailItem("Nákupná cena", position.costBasisPrice.toCurrencyString(position.currency))
+                        MetricDetailItem("Trhová cena", position.markPrice.toCurrencyString(position.currency))
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        MetricDetailItem("Sector", position.sector.ifBlank { "N/A" })
-                        MetricDetailItem("Country", position.country.ifBlank { "N/A" })
-                        MetricDetailItem("Daily Change %", position.pnlPercentage.toPercentageString())
+                        MetricDetailItem("Sektor", position.sector.ifBlank { "N/A" })
+                        MetricDetailItem("Krajina", position.country.ifBlank { "N/A" })
+                        MetricDetailItem(
+                            "Mena / Kurz",
+                            if (position.currency == "EUR") "EUR (1.0)" else "${position.currency} (${String.format(Locale.US, "%.4f", position.fxRateToPortfolio)} €)"
+                        )
                     }
 
                     // --- Trades / Purchase History Section ---
@@ -1269,6 +1304,7 @@ fun PositionCard(
                             } else {
                                 position.trades.forEach { trade ->
                                     val isBuy = trade.buySell.uppercase() == "BUY"
+                                    val tradeCurr = trade.currency.ifBlank { position.currency }
                                     Surface(
                                         shape = RoundedCornerShape(12.dp),
                                         color = InputFieldBg,
@@ -1314,8 +1350,8 @@ fun PositionCard(
                                                 Spacer(modifier = Modifier.height(2.dp))
 
                                                 Text(
-                                                    text = "${String.format(Locale.US, "%,.2f", trade.quantity)} ks @ ${trade.price.toCurrencyString()}" +
-                                                            if (trade.commission > 0) " (poplatok: ${trade.commission.toCurrencyString()})" else "",
+                                                    text = "${String.format(Locale.US, "%,.2f", trade.quantity)} ks @ ${trade.price.toCurrencyString(tradeCurr)}" +
+                                                            if (trade.commission > 0) " (poplatok: ${trade.commission.toCurrencyString(tradeCurr)})" else "",
                                                     style = MaterialTheme.typography.bodySmall.copy(
                                                         color = TextSecondary,
                                                         fontSize = 12.sp
@@ -1324,7 +1360,7 @@ fun PositionCard(
                                             }
 
                                             Text(
-                                                text = trade.totalAmount.toCurrencyString(),
+                                                text = trade.totalAmount.toCurrencyString(tradeCurr),
                                                 style = MaterialTheme.typography.titleSmall.copy(
                                                     fontWeight = FontWeight.Bold,
                                                     color = TextPrimary
@@ -1731,7 +1767,7 @@ fun AddTradeDialog(
                         priceInput = it
                         errorMessage = null
                     },
-                    label = { Text("Nákupná cena za kus") },
+                    label = { Text("Nákupná cena za kus (${position.currency})") },
                     placeholder = { Text("napr. 150.00") },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(

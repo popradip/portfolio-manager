@@ -109,6 +109,8 @@ class IbkrFlexCsvParser : BrokerCsvParser {
                         val costBasisTotal = costBasisPrice * quantity
                         val pnlPct = if (costBasisTotal != 0.0) (posUnrealizedPnl / costBasisTotal) * 100.0 else 0.0
 
+                        val posCurrency = rowMap["currency"]?.ifBlank { null } ?: rowMap["currencyprimary"]?.ifBlank { null } ?: currency
+
                         val position = Position(
                             id = "ibkr_csv_pos_${positions.size + 1}_$symbol",
                             symbol = symbol,
@@ -123,7 +125,8 @@ class IbkrFlexCsvParser : BrokerCsvParser {
                             pnlPercentage = pnlPct,
                             sector = sector,
                             country = country,
-                            sparklinePoints = generateSparkline(markPrice)
+                            sparklinePoints = generateSparkline(markPrice),
+                            currency = posCurrency
                         )
                         positions.add(position)
                     }
@@ -139,6 +142,7 @@ class IbkrFlexCsvParser : BrokerCsvParser {
                         val price = rowMap["tradeprice"]?.toDoubleOrNull() ?: 0.0
                         val commission = Math.abs(rowMap["ibcommission"]?.toDoubleOrNull() ?: 0.0)
                         val totalAmount = (quantity * price) + commission
+                        val tradeCurrency = rowMap["currency"]?.ifBlank { null } ?: currency
 
                         val trade = Trade(
                             id = tradeId,
@@ -148,7 +152,8 @@ class IbkrFlexCsvParser : BrokerCsvParser {
                             quantity = quantity,
                             price = price,
                             commission = commission,
-                            totalAmount = totalAmount
+                            totalAmount = totalAmount,
+                            currency = tradeCurrency
                         )
                         rawTrades.add(trade)
                     }

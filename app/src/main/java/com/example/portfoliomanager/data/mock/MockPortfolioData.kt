@@ -15,7 +15,7 @@ object MockPortfolioData {
         val accountSummary = AccountSummary(
             accountId = "U12345678",
             accountName = "Primary Investment Account",
-            currency = "USD",
+            currency = "EUR",
             netLiquidation = 1245890.50,
             totalCashValue = 245890.50,
             settledCash = 220000.00,

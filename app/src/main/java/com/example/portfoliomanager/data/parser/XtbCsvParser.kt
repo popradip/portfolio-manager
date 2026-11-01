@@ -214,6 +214,7 @@ class XtbCsvParser : BrokerCsvParser {
                     val markPrice = if (vol > 0.0) marketValue / vol else openPrice
                     val costBasisTotal = openPrice * vol
                     val pnlPercentage = netPnlPct ?: if (costBasisTotal != 0.0) (netPnl / costBasisTotal) * 100.0 else 0.0
+                    val posCurrency = detectCurrencyFromTicker(ticker, currency)
 
                     val position = Position(
                         id = "xtb_pos_${positions.size + 1}_$ticker",
@@ -228,7 +229,8 @@ class XtbCsvParser : BrokerCsvParser {
                         totalPnl = netPnl,
                         pnlPercentage = pnlPercentage,
                         sector = getSectorForSymbol(ticker, assetCategory),
-                        country = getCountryForSymbol(ticker)
+                        country = getCountryForSymbol(ticker),
+                        currency = posCurrency
                     )
                     positions.add(position)
                 } else {
@@ -635,5 +637,17 @@ class XtbCsvParser : BrokerCsvParser {
             return sdf.format(java.util.Date(millis))
         }
         return value
+    }
+
+    private fun detectCurrencyFromTicker(ticker: String, defaultCurrency: String = "USD"): String {
+        val upper = ticker.trim().uppercase()
+        return when {
+            upper.endsWith(".DE") || upper.endsWith(".PA") || upper.endsWith(".MI") || upper.endsWith(".AS") -> "EUR"
+            upper.endsWith(".UK") || upper.endsWith(".L") -> "GBP"
+            upper.endsWith(".WA") -> "PLN"
+            upper.endsWith(".PR") -> "CZK"
+            upper.endsWith(".US") || upper.contains("US.") -> "USD"
+            else -> defaultCurrency
+        }
     }
 }

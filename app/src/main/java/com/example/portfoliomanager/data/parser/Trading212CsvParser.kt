@@ -263,7 +263,8 @@ class Trading212CsvParser : BrokerCsvParser {
                     pnlPercentage = pnlPct,
                     sector = sector,
                     country = country,
-                    trades = holding.trades
+                    trades = holding.trades,
+                    currency = holding.priceCurrency.ifBlank { "USD" }
                 )
             )
         }

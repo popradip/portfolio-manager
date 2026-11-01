@@ -55,7 +55,8 @@ data class Trade(
     val quantity: Double,
     val price: Double,
     val commission: Double,
-    val totalAmount: Double
+    val totalAmount: Double,
+    val currency: String = "USD"
 )
 
 data class Position(
@@ -73,7 +74,9 @@ data class Position(
     val sector: String,
     val country: String,
     val sparklinePoints: List<Double> = emptyList(),
-    val trades: List<Trade> = emptyList()
+    val trades: List<Trade> = emptyList(),
+    val currency: String = "USD",
+    val fxRateToPortfolio: Double = 1.0
 )
 
 data class SectorAllocation(

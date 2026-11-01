@@ -249,6 +249,7 @@ class IbkrFlexXmlParser {
 
             val costBasisTotal = costBasisPrice * qty
             val pnlPct = if (costBasisTotal != 0.0) (posUnrealizedPnl / costBasisTotal) * 100.0 else 0.0
+            val posCurrency = getAttr(elem, "currency", currency)
 
             val position = Position(
                 id = "ibkr_pos_${positionsList.size + 1}_$posSymbol",
@@ -264,7 +265,8 @@ class IbkrFlexXmlParser {
                 pnlPercentage = pnlPct,
                 sector = sector,
                 country = mapCountryCode(country),
-                sparklinePoints = generateMockSparkline(markPrice)
+                sparklinePoints = generateMockSparkline(markPrice),
+                currency = posCurrency
             )
             positionsList.add(position)
         }

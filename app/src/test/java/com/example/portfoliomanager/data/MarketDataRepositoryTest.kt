@@ -25,7 +25,8 @@ class FakeYahooFinanceApiClient : YahooFinanceApiClient() {
                 previousClose = 170.0,
                 dailyChange = 5.0,
                 dailyChangePercentage = 2.94,
-                sparklinePoints = listOf(168.0, 170.0, 172.0, 175.0)
+                sparklinePoints = listOf(168.0, 170.0, 172.0, 175.0),
+                currency = "EUR"
             )
             "AAPL" -> YahooMarketData(
                 symbol = "AAPL",
@@ -34,10 +35,15 @@ class FakeYahooFinanceApiClient : YahooFinanceApiClient() {
                 previousClose = 190.0,
                 dailyChange = 10.0,
                 dailyChangePercentage = 5.26,
-                sparklinePoints = listOf(185.0, 190.0, 200.0)
+                sparklinePoints = listOf(185.0, 190.0, 200.0),
+                currency = "USD"
             )
             else -> null
         }
+    }
+
+    override suspend fun fetchExchangeRate(fromCurrency: String, toCurrency: String): Double? {
+        return if (fromCurrency == "USD" && toCurrency == "EUR") 1.0 else 1.0
     }
 }
 

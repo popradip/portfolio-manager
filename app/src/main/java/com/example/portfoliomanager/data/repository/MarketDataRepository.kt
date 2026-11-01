@@ -1,21 +1,18 @@
 package com.example.portfoliomanager.data.repository
 
-import com.example.portfoliomanager.data.model.Balances
 import com.example.portfoliomanager.data.model.GeographyAllocation
-import com.example.portfoliomanager.data.model.MarginRequirements
 import com.example.portfoliomanager.data.model.PortfolioData
 import com.example.portfoliomanager.data.model.Position
 import com.example.portfoliomanager.data.model.SectorAllocation
 import com.example.portfoliomanager.data.remote.AppLogger
 import com.example.portfoliomanager.data.remote.YahooFinanceApiClient
-import com.example.portfoliomanager.data.remote.YahooMarketData
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 
 interface MarketDataRepository {
     /**
-     * Enriches the provided [PortfolioData] with live Yahoo Finance market prices, sparklines, and updated P&L metrics.
+     * Enriches the provided [PortfolioData] with live Yahoo Finance market prices, FX exchange rates, sparklines, and updated P&L metrics.
      */
     suspend fun enrichPortfolioWithLivePrices(portfolioData: PortfolioData): PortfolioData
 }
@@ -28,7 +25,9 @@ class MarketDataRepositoryImpl(
         if (portfolioData.positions.isEmpty()) return@coroutineScope portfolioData
 
         try {
-            // Fetch live prices for all distinct positions in parallel
+            val targetCurrency = portfolioData.accountSummary.currency.ifBlank { "EUR" }.uppercase()
+
+            // 1. Fetch live prices for all distinct positions in parallel
             val distinctSymbols = portfolioData.positions.map { it.symbol }.distinct()
             AppLogger.d("MarketDataRepository", "Enriching ${portfolioData.positions.size} positions (${distinctSymbols.joinToString()}) with Yahoo Finance live prices...")
 
@@ -42,37 +41,69 @@ class MarketDataRepositoryImpl(
 
             AppLogger.d("MarketDataRepository", "Received live market data for ${marketDataMap.size} of ${distinctSymbols.size} symbols.")
 
-            if (marketDataMap.isEmpty()) {
-                return@coroutineScope portfolioData
+            // 2. Resolve currencies for positions (update from Yahoo metadata if available)
+            val updatedPositionCurrencies = portfolioData.positions.map { pos ->
+                val marketData = marketDataMap[pos.symbol]
+                val detectedCurrency = marketData?.currency?.ifBlank { null } ?: pos.currency.ifBlank { "USD" }
+                pos.copy(currency = detectedCurrency.uppercase())
             }
 
-            val updatedPositions = portfolioData.positions.map { pos ->
-                val marketData = marketDataMap[pos.symbol]
-                if (marketData != null) {
-                    val liveMarkPrice = marketData.currentPrice
-                    val updatedMarketValue = pos.quantity * liveMarkPrice
-                    val updatedCostBasisTotal = pos.costBasisPrice * pos.quantity
-                    val updatedTotalPnl = updatedMarketValue - updatedCostBasisTotal
-                    val updatedPnlPercentage = if (updatedCostBasisTotal > 0.0) {
-                        (updatedTotalPnl / updatedCostBasisTotal) * 100.0
-                    } else pos.pnlPercentage
-
-                    val updatedDailyPnl = (marketData.dailyChange) * pos.quantity
-
-                    pos.copy(
-                        markPrice = liveMarkPrice,
-                        marketValue = updatedMarketValue,
-                        dailyPnl = updatedDailyPnl,
-                        totalPnl = updatedTotalPnl,
-                        pnlPercentage = updatedPnlPercentage,
-                        sparklinePoints = if (marketData.sparklinePoints.isNotEmpty()) marketData.sparklinePoints else pos.sparklinePoints
-                    )
-                } else {
-                    pos
+            // 3. Identify all distinct position currencies and fetch FX exchange rates to target currency (e.g. EUR)
+            val distinctCurrencies = updatedPositionCurrencies.map { it.currency }.distinct()
+            val fxRatesDeferreds = distinctCurrencies.map { curr ->
+                async {
+                    val rate = if (curr == targetCurrency) 1.0 else {
+                        yahooApiClient.fetchExchangeRate(curr, targetCurrency) ?: getFallbackFxRate(curr, targetCurrency)
+                    }
+                    curr to rate
                 }
             }
 
-            // Recalculate portfolio-wide summary stats based on updated live position values
+            val fxRatesMap = fxRatesDeferreds.awaitAll().toMap()
+            AppLogger.d("MarketDataRepository", "FX Rates to $targetCurrency: $fxRatesMap")
+
+            // 4. Update each position with live prices and converted market value in target currency (EUR)
+            val updatedPositions = updatedPositionCurrencies.map { pos ->
+                val marketData = marketDataMap[pos.symbol]
+                val fxRate = fxRatesMap[pos.currency] ?: 1.0
+
+                if (marketData != null) {
+                    val liveMarkPriceNative = marketData.currentPrice
+                    val costBasisPriceNative = pos.costBasisPrice
+
+                    val updatedMarketValueInTarget = pos.quantity * liveMarkPriceNative * fxRate
+                    val updatedCostBasisTotalInTarget = pos.quantity * costBasisPriceNative * fxRate
+                    val updatedTotalPnlInTarget = updatedMarketValueInTarget - updatedCostBasisTotalInTarget
+                    val updatedPnlPercentage = if (updatedCostBasisTotalInTarget > 0.0) {
+                        (updatedTotalPnlInTarget / updatedCostBasisTotalInTarget) * 100.0
+                    } else pos.pnlPercentage
+
+                    val updatedDailyPnlInTarget = marketData.dailyChange * pos.quantity * fxRate
+
+                    pos.copy(
+                        markPrice = liveMarkPriceNative,
+                        marketValue = updatedMarketValueInTarget,
+                        dailyPnl = updatedDailyPnlInTarget,
+                        totalPnl = updatedTotalPnlInTarget,
+                        pnlPercentage = updatedPnlPercentage,
+                        sparklinePoints = if (marketData.sparklinePoints.isNotEmpty()) marketData.sparklinePoints else pos.sparklinePoints,
+                        fxRateToPortfolio = fxRate
+                    )
+                } else {
+                    val updatedMarketValueInTarget = pos.marketValue * fxRate
+                    val updatedTotalPnlInTarget = pos.totalPnl * fxRate
+                    val updatedDailyPnlInTarget = pos.dailyPnl * fxRate
+
+                    pos.copy(
+                        marketValue = updatedMarketValueInTarget,
+                        totalPnl = updatedTotalPnlInTarget,
+                        dailyPnl = updatedDailyPnlInTarget,
+                        fxRateToPortfolio = fxRate
+                    )
+                }
+            }
+
+            // 5. Recalculate portfolio-wide summary stats based on converted values
             val posMarketValueSum = updatedPositions.sumOf { it.marketValue }
             val totalCash = portfolioData.balances.totalCash
             val updatedNetLiquidation = posMarketValueSum + totalCash
@@ -84,6 +115,7 @@ class MarketDataRepositoryImpl(
             val updatedTotalPnlPct = if (updatedNetLiquidation > 0.0) (updatedTotalPnlSum / updatedNetLiquidation) * 100.0 else 0.0
 
             val updatedAccountSummary = portfolioData.accountSummary.copy(
+                currency = targetCurrency,
                 netLiquidation = updatedNetLiquidation,
                 dailyPnl = updatedDailyPnlSum,
                 dailyPnlPercentage = updatedDailyPnlPct,
@@ -116,6 +148,22 @@ class MarketDataRepositoryImpl(
         } catch (e: Exception) {
             AppLogger.e("MarketDataRepository", "Failed to enrich portfolio with Yahoo Finance live prices: ${e.message}", e)
             portfolioData
+        }
+    }
+
+    private fun getFallbackFxRate(fromCurrency: String, targetCurrency: String): Double {
+        if (fromCurrency.equals(targetCurrency, ignoreCase = true)) return 1.0
+        return when (fromCurrency.uppercase()) {
+            "USD" -> 0.92
+            "GBP" -> 1.17
+            "CZK" -> 0.040
+            "PLN" -> 0.23
+            "CHF" -> 1.05
+            "CAD" -> 0.68
+            "AUD" -> 0.60
+            "HUF" -> 0.0025
+            "JPY" -> 0.0062
+            else -> 1.0
         }
     }
 
