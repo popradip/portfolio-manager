@@ -75,7 +75,7 @@ class PortfolioViewModel(
                         state.copy(
                             isLoading = false,
                             isRefreshing = false,
-                            errorMessage = throwable.message ?: "Failed to load IBKR portfolio data."
+                            errorMessage = throwable.message ?: "Nepodarilo sa synchronizovať trhové dáta z Yahoo Finance."
                         )
                     }
                 }
@@ -279,7 +279,7 @@ class PortfolioViewModel(
             _uiState.update {
                 it.copy(
                     isSavingCredentials = false,
-                    credentialsSavedMessage = "Credentials saved successfully.",
+                    credentialsSavedMessage = "Prihlasovacie údaje boli úspešne uložené.",
                     isMockMode = false
                 )
             }

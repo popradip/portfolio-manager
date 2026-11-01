@@ -5,18 +5,18 @@ import com.example.portfoliomanager.data.model.Position
 import com.example.portfoliomanager.data.model.SectorAllocation
 
 enum class CategoryFilter(val displayName: String) {
-    ALL("All"),
-    STOCKS("Stocks"),
-    ETFS("ETFs"),
-    BONDS("Bonds"),
-    CASH("Cash"),
-    OTHER("Other")
+    ALL("Všetky"),
+    STOCKS("Akcie"),
+    ETFS("ETF"),
+    BONDS("Dlhopisy"),
+    CASH("Hotovosť"),
+    OTHER("Ostatné")
 }
 
 enum class PositionSortOption(val displayName: String) {
     SYMBOL("Symbol"),
-    MARKET_VALUE("Market Value"),
-    DAILY_PNL("Daily P&L"),
+    MARKET_VALUE("Trhová hodnota"),
+    DAILY_PNL("Denný P&L"),
     PNL_PERCENTAGE("P&L %")
 }
 
@@ -26,19 +26,19 @@ enum class SortOrder {
 }
 
 enum class BreakdownTab(val displayName: String) {
-    GEOGRAPHY("Geography"),
-    INDUSTRY("Industry"),
-    CATEGORY("Category")
+    GEOGRAPHY("Geografia"),
+    INDUSTRY("Sektor"),
+    CATEGORY("Kategória")
 }
 
 enum class MarginTab(val displayName: String) {
-    EXPIRATION("Expiration"),
+    EXPIRATION("Expirácia"),
     OVERNIGHT("Overnight")
 }
 
 enum class BottomNavTab(val displayName: String) {
-    HOME("Home"),
-    ASSETS("Your Assets")
+    HOME("Prehľad"),
+    ASSETS("Moje aktíva")
 }
 
 data class PortfolioUiState(

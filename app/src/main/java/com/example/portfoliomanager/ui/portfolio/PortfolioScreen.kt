@@ -149,10 +149,10 @@ fun PortfolioScreenContent(
                                 )
                             }
 
-                            // Expandable Balances Card
+                            // Expandable Portfolio Statistics Card
                             item {
                                 ExpandableBalancesCard(
-                                    balances = portfolioData.balances,
+                                    portfolioData = portfolioData,
                                     isExpanded = uiState.isBalancesExpanded,
                                     onToggleExpand = onToggleBalancesExpanded
                                 )

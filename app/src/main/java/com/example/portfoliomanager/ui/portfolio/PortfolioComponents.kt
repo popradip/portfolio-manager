@@ -217,12 +217,12 @@ fun TopHeaderAndTabs(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.FileUpload,
-                            contentDescription = "Import CSV",
+                            contentDescription = "Import výpisu",
                             tint = Color.White,
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
-                            text = "Import CSV",
+                            text = "Import výpisu",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -333,7 +333,7 @@ fun AccountSummaryCard(
                     color = Color(0xFFF8FAFC)
                 ) {
                     Text(
-                        text = "$positionsCount Positions",
+                        text = "$positionsCount pozícií",
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontWeight = FontWeight.SemiBold,
                             color = DarkPill
@@ -346,7 +346,7 @@ fun AccountSummaryCard(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Net Liquidation Value",
+                text = "Čistá hodnota portfólia",
                 style = MaterialTheme.typography.labelLarge.copy(
                     fontWeight = FontWeight.Medium,
                     color = TextSecondary
@@ -421,15 +421,34 @@ private fun rememberTimeStr(): String {
     return sdf.format(Date())
 }
 
-// --- Expandable Balances Card ---
+// --- Expandable Portfolio Statistics Card ---
 
 @Composable
 fun ExpandableBalancesCard(
-    balances: Balances?,
+    portfolioData: com.example.portfoliomanager.data.model.PortfolioData?,
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val positions = portfolioData?.positions ?: emptyList()
+    val balances = portfolioData?.balances
+    val accountSummary = portfolioData?.accountSummary
+
+    val totalPnl = accountSummary?.totalPnl ?: positions.sumOf { it.totalPnl }
+    val totalPnlPct = accountSummary?.totalPnlPercentage ?: 0.0
+    val unrealizedPnl = balances?.unrealizedPnl ?: positions.sumOf { it.totalPnl }
+    val realizedPnl = balances?.realizedPnl ?: 0.0
+    val currency = accountSummary?.currency ?: "EUR"
+
+    val totalPositionsCount = positions.size
+    val profitableCount = positions.count { it.totalPnl >= 0 }
+    val lossCount = positions.count { it.totalPnl < 0 }
+
+    val bestPerformer = positions.maxByOrNull { it.pnlPercentage }
+    val worstPerformer = positions.minByOrNull { it.pnlPercentage }
+    val topHolding = positions.maxByOrNull { it.marketValue }
+    val totalMarketValue = positions.sumOf { it.marketValue.coerceAtLeast(0.0) }.coerceAtLeast(1.0)
+
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = CardBackground),
@@ -451,7 +470,7 @@ fun ExpandableBalancesCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Balances",
+                    text = "Štatistiky portfólia",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
@@ -461,7 +480,7 @@ fun ExpandableBalancesCard(
                 IconButton(onClick = onToggleExpand) {
                     Icon(
                         imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                        contentDescription = "Expand Balances",
+                        contentDescription = "Rozbaliť štatistiky",
                         tint = TextSecondary
                     )
                 }
@@ -476,29 +495,53 @@ fun ExpandableBalancesCard(
                     HorizontalDivider(color = CardBorderColor, thickness = 1.dp)
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    BalanceMetricRow(label = "Total Cash", value = (balances?.totalCash ?: 0.0).toCurrencyString())
-                    BalanceMetricRow(label = "Settled Cash", value = (balances?.settledCash ?: 0.0).toCurrencyString())
-                    BalanceMetricRow(label = "Accrued Cash", value = (balances?.accruedCash ?: 0.0).toCurrencyString())
-
-                    val unrealized = balances?.unrealizedPnl ?: 0.0
                     BalanceMetricRow(
-                        label = "Unrealized P&L",
-                        value = unrealized.toSignedCurrencyString(),
-                        valueColor = if (unrealized >= 0) PositiveGreen else NegativeRed
-                    )
-
-                    val realized = balances?.realizedPnl ?: 0.0
-                    BalanceMetricRow(
-                        label = "Realized P&L",
-                        value = realized.toSignedCurrencyString(),
-                        valueColor = if (realized >= 0) PositiveGreen else NegativeRed
-                    )
-
-                    BalanceMetricRow(
-                        label = "Net Liquidation",
-                        value = (balances?.netLiquidation ?: 0.0).toCurrencyString(),
+                        label = "Celkový zisk / strata",
+                        value = "${totalPnl.toSignedCurrencyString(currency)} (${totalPnlPct.toPercentageString()})",
+                        valueColor = if (totalPnl >= 0) PositiveGreen else NegativeRed,
                         isBold = true
                     )
+
+                    BalanceMetricRow(
+                        label = "Nerealizovaný P&L",
+                        value = unrealizedPnl.toSignedCurrencyString(currency),
+                        valueColor = if (unrealizedPnl >= 0) PositiveGreen else NegativeRed
+                    )
+
+                    BalanceMetricRow(
+                        label = "Realizovaný P&L",
+                        value = realizedPnl.toSignedCurrencyString(currency),
+                        valueColor = if (realizedPnl >= 0) PositiveGreen else NegativeRed
+                    )
+
+                    BalanceMetricRow(
+                        label = "Počet pozícií",
+                        value = "$totalPositionsCount ($profitableCount ziskových, $lossCount stratových)"
+                    )
+
+                    if (topHolding != null) {
+                        val topHoldingPct = (topHolding.marketValue / totalMarketValue) * 100.0
+                        BalanceMetricRow(
+                            label = "Najväčšia pozícia",
+                            value = "${topHolding.symbol} (${String.format(Locale.US, "%.1f", topHoldingPct)}% portfólia)"
+                        )
+                    }
+
+                    if (bestPerformer != null) {
+                        BalanceMetricRow(
+                            label = "Najlepší výkon",
+                            value = "${bestPerformer.symbol} (${bestPerformer.pnlPercentage.toPercentageString()})",
+                            valueColor = PositiveGreen
+                        )
+                    }
+
+                    if (worstPerformer != null && positions.size > 1) {
+                        BalanceMetricRow(
+                            label = "Najhorší výkon",
+                            value = "${worstPerformer.symbol} (${worstPerformer.pnlPercentage.toPercentageString()})",
+                            valueColor = if (worstPerformer.pnlPercentage >= 0) PositiveGreen else NegativeRed
+                        )
+                    }
                 }
             }
         }
@@ -567,7 +610,7 @@ fun ExpandableMarginCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Margin Requirements",
+                    text = "Margin požiadavky",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
@@ -577,7 +620,7 @@ fun ExpandableMarginCard(
                 IconButton(onClick = onToggleExpand) {
                     Icon(
                         imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                        contentDescription = "Expand Margin",
+                        contentDescription = "Rozbaliť margin",
                         tint = TextSecondary
                     )
                 }
@@ -594,11 +637,11 @@ fun ExpandableMarginCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Used: ${usedMargin.toCurrencyString()}",
+                    text = "Využité: ${usedMargin.toCurrencyString()}",
                     style = MaterialTheme.typography.labelSmall.copy(color = TextSecondary)
                 )
                 Text(
-                    text = "Available: ${availableMargin.toCurrencyString()}",
+                    text = "K dispozícii: ${availableMargin.toCurrencyString()}",
                     style = MaterialTheme.typography.labelSmall.copy(color = TextSecondary, fontWeight = FontWeight.SemiBold)
                 )
             }
@@ -653,24 +696,24 @@ fun ExpandableMarginCard(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     BalanceMetricRow(
-                        label = "Initial Margin Req",
+                        label = "Počiatočný margin",
                         value = (marginRequirements?.initialMarginReq ?: 0.0).toCurrencyString()
                     )
                     BalanceMetricRow(
-                        label = "Maintenance Margin Req",
+                        label = "Udržiavací margin",
                         value = (marginRequirements?.maintMarginReq ?: 0.0).toCurrencyString()
                     )
                     BalanceMetricRow(
-                        label = "Available Funds",
+                        label = "Voľné prostriedky",
                         value = (marginRequirements?.availableMargin ?: 0.0).toCurrencyString()
                     )
                     BalanceMetricRow(
-                        label = "Excess Liquidity",
+                        label = "Nadbytočná likvidita",
                         value = (marginRequirements?.excessLiquidity ?: 0.0).toCurrencyString(),
                         isBold = true
                     )
                     BalanceMetricRow(
-                        label = "Margin Ratio",
+                        label = "Pomer marginu",
                         value = "${marginRequirements?.marginRatioPercentage ?: 0.0}%"
                     )
                 }
@@ -703,7 +746,7 @@ fun BreakdownAnalyticsCard(
                 .padding(16.dp)
         ) {
             Text(
-                text = "${selectedBreakdownTab.displayName} Breakdown",
+                text = "Rozdelenie: ${selectedBreakdownTab.displayName}",
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
@@ -880,7 +923,7 @@ fun YourAssetsSection(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "Your Assets",
+                    text = "Moje aktíva",
                     style = MaterialTheme.typography.titleLarge.copy(
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
@@ -911,7 +954,7 @@ fun YourAssetsSection(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.FilterList,
-                    contentDescription = "Search Filter",
+                    contentDescription = "Filter vyhľadávania",
                     tint = TextPrimary
                 )
             }
@@ -927,11 +970,11 @@ fun YourAssetsSection(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = onSearchQueryChanged,
-                placeholder = { Text("Search by symbol, name, or sector...", color = TextSecondary) },
+                placeholder = { Text("Hľadať podľa symbolu, názvu alebo sektora...", color = TextSecondary) },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Rounded.Search,
-                        contentDescription = "Search",
+                        contentDescription = "Vyhľadávanie",
                         tint = TextSecondary
                     )
                 },
@@ -940,7 +983,7 @@ fun YourAssetsSection(
                         IconButton(onClick = { onSearchQueryChanged("") }) {
                             Icon(
                                 imageVector = Icons.Rounded.Clear,
-                                contentDescription = "Clear",
+                                contentDescription = "Vymazať",
                                 tint = TextSecondary
                             )
                         }
@@ -1018,7 +1061,7 @@ fun YourAssetsSection(
                     .padding(32.dp)
             ) {
                 Text(
-                    text = "No assets match your search or filter criteria.",
+                    text = "Žiadne aktíva nezodpovedajú vyhľadávaniu alebo filtru.",
                     style = MaterialTheme.typography.bodyMedium.copy(color = TextSecondary)
                 )
             }
@@ -1047,6 +1090,15 @@ fun PositionCard(
     modifier: Modifier = Modifier
 ) {
     val isPositive = position.dailyPnl >= 0
+    val categoryLabel = when (position.assetCategory) {
+        com.example.portfoliomanager.data.model.AssetCategory.STK -> "AKCIE"
+        com.example.portfoliomanager.data.model.AssetCategory.CRYPTO -> "KRYPTO"
+        com.example.portfoliomanager.data.model.AssetCategory.OPT -> "OPCIE"
+        com.example.portfoliomanager.data.model.AssetCategory.ETF -> "ETF"
+        com.example.portfoliomanager.data.model.AssetCategory.BOND -> "DLHOPISY"
+        com.example.portfoliomanager.data.model.AssetCategory.CASH -> "HOTOVOSŤ"
+        else -> "OSTATNÉ"
+    }
 
     Card(
         shape = RoundedCornerShape(20.dp),
@@ -1106,7 +1158,7 @@ fun PositionCard(
                                 color = Color(0xFFF1F5F9)
                             ) {
                                 Text(
-                                    text = position.assetCategory.name,
+                                    text = categoryLabel,
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
@@ -1146,7 +1198,7 @@ fun PositionCard(
                     ) {
                         Icon(
                             imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = "Expand Position",
+                            contentDescription = "Rozbaliť pozíciu",
                             tint = TextSecondary
                         )
                     }
@@ -1161,7 +1213,7 @@ fun PositionCard(
             ) {
                 Column {
                     Text(
-                        text = "Market Value",
+                        text = "Trhová hodnota",
                         style = MaterialTheme.typography.labelSmall.copy(color = TextSecondary)
                     )
                     Text(
@@ -1175,7 +1227,7 @@ fun PositionCard(
 
                 Column {
                     Text(
-                        text = "Daily P&L",
+                        text = "Denný P&L",
                         style = MaterialTheme.typography.labelSmall.copy(color = TextSecondary)
                     )
                     Text(
@@ -1189,7 +1241,7 @@ fun PositionCard(
 
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = "Total P&L",
+                        text = "Celkový P&L",
                         style = MaterialTheme.typography.labelSmall.copy(color = TextSecondary)
                     )
                     Text(
@@ -1529,12 +1581,12 @@ fun SyncingBanner(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Sync,
-                    contentDescription = "Syncing",
+                    contentDescription = "Synchronizácia",
                     tint = Color(0xFF2563EB),
                     modifier = Modifier.size(20.dp)
                 )
                 Text(
-                    text = "Syncing live IBKR portfolio data...",
+                    text = "Synchronizácia trhových dát s Yahoo Finance...",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF1E40AF)
@@ -1579,13 +1631,13 @@ fun ErrorBanner(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Warning,
-                    contentDescription = "Warning",
+                    contentDescription = "Upozornenie",
                     tint = Color(0xFFDC2626),
                     modifier = Modifier.size(24.dp)
                 )
                 Column {
                     Text(
-                        text = "IBKR Live Sync Error",
+                        text = "Chyba synchronizácie s Yahoo Finance",
                         style = MaterialTheme.typography.labelLarge.copy(
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF991B1B)
@@ -1606,14 +1658,14 @@ fun ErrorBanner(
                 IconButton(onClick = onRetry) {
                     Icon(
                         imageVector = Icons.Rounded.Refresh,
-                        contentDescription = "Retry",
+                        contentDescription = "Obnoviť",
                         tint = Color(0xFF991B1B)
                     )
                 }
                 IconButton(onClick = onDismiss) {
                     Icon(
                         imageVector = Icons.Rounded.Close,
-                        contentDescription = "Dismiss",
+                        contentDescription = "Zatvoriť",
                         tint = Color(0xFF991B1B)
                     )
                 }

@@ -170,7 +170,7 @@ class PortfolioViewModelTest {
         assertTrue(fakeRepository.saveCredentialsCalled)
         assertEquals("MY_SECRET_TOKEN", fakeRepository.storedToken)
         assertEquals("998877", fakeRepository.storedQueryId)
-        assertEquals("Credentials saved successfully.", viewModel.uiState.value.credentialsSavedMessage)
+        assertEquals("Prihlasovacie údaje boli úspešne uložené.", viewModel.uiState.value.credentialsSavedMessage)
 
         viewModel.clearCredentialsMessage()
         assertNull(viewModel.uiState.value.credentialsSavedMessage)
