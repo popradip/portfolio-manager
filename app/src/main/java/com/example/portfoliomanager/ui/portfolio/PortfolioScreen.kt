@@ -121,13 +121,6 @@ fun PortfolioScreenContent(
                     LazyColumn(
                         modifier = Modifier.fillMaxSize()
                     ) {
-                    // Top Bar Header
-                    item {
-                        TopHeaderAndTabs(
-                            onSettingsClick = { onToggleSettingsDialog(true) }
-                        )
-                    }
-
                     // Live Syncing Progress Indicator Banner
                     if (uiState.isRefreshing) {
                         item {
@@ -152,7 +145,7 @@ fun PortfolioScreenContent(
                             item {
                                 AccountSummaryCard(
                                     accountSummary = portfolioData.accountSummary,
-                                    positionsCount = portfolioData.positions.size
+                                    onImportClick = { onToggleSettingsDialog(true) }
                                 )
                             }
 

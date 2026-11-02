@@ -301,7 +301,7 @@ fun SparklineCanvas(
 @Composable
 fun AccountSummaryCard(
     accountSummary: AccountSummary?,
-    positionsCount: Int,
+    onImportClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val currentTimeGmtStr = rememberTimeStr()
@@ -339,17 +339,31 @@ fun AccountSummaryCard(
                 }
 
                 Surface(
+                    onClick = onImportClick,
                     shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFFF8FAFC)
+                    color = DarkPill,
+                    modifier = Modifier.height(28.dp)
                 ) {
-                    Text(
-                        text = "$positionsCount pozícií",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            color = DarkPill
-                        ),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.FileUpload,
+                            contentDescription = "Import výpisu",
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "Import výpisu",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                color = Color.White
+                            )
+                        )
+                    }
                 }
             }
 
@@ -1116,8 +1130,8 @@ private fun DailyPnlBarColumn(
         Text(
             text = amountText,
             style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
                 color = barColor
             ),
             maxLines = 1,
@@ -1128,9 +1142,9 @@ private fun DailyPnlBarColumn(
         Text(
             text = percentageText,
             style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 8.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = barColor
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Medium,
+                color = barColor.copy(alpha = 0.85f)
             ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
