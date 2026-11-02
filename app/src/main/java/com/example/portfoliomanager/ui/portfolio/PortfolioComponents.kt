@@ -464,6 +464,7 @@ fun PortfolioEvolutionChartCard(
     dailyPnl: Double = 0.0,
     dailyPnlPercentage: Double = 0.0,
     currency: String = "EUR",
+    positions: List<Position> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     var activePoint by remember(historyData) { mutableStateOf<PortfolioHistoryPoint?>(null) }
@@ -912,7 +913,260 @@ fun PortfolioEvolutionChartCard(
                     )
                 }
             }
+
+            if (positions.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = CardBorderColor, thickness = 1.dp)
+                Spacer(modifier = Modifier.height(14.dp))
+
+                TopDailyPnlMoversSection(
+                    positions = positions,
+                    currency = currency
+                )
+            }
         }
+    }
+}
+
+// --- Top Daily P&L Movers Section ---
+
+fun Double.toCompactSignedCurrencyString(currencyCodeOrSymbol: String = "EUR"): String {
+    val raw = currencyCodeOrSymbol.trim()
+    val symbol = raw.toCurrencySymbol()
+    val sign = if (this > 0) "+" else if (this < 0) "-" else ""
+    val absVal = kotlin.math.abs(this)
+    val isSuffix = raw.uppercase() in listOf("CZK", "PLN", "HUF")
+
+    val formattedVal = when {
+        absVal >= 1_000_000 -> String.format(Locale.US, "%.1fM", absVal / 1_000_000.0)
+        absVal >= 100_000 -> String.format(Locale.US, "%.0fk", absVal / 1_000.0)
+        absVal >= 1_000 -> String.format(Locale.US, "%.1fk", absVal / 1_000.0)
+        absVal >= 100 -> String.format(Locale.US, "%.0f", absVal)
+        else -> String.format(Locale.US, "%.2f", absVal)
+    }
+
+    return if (isSuffix) {
+        "$sign$formattedVal ${symbol.trim()}"
+    } else {
+        "$sign$symbol$formattedVal"
+    }
+}
+
+@Composable
+fun TopDailyPnlMoversSection(
+    positions: List<Position>,
+    currency: String = "EUR",
+    modifier: Modifier = Modifier
+) {
+    val positivePositions = remember(positions) {
+        positions
+            .filter { it.dailyPnl > 0.0 }
+            .sortedByDescending { it.dailyPnl }
+            .take(5)
+    }
+
+    val negativePositions = remember(positions) {
+        positions
+            .filter { it.dailyPnl < 0.0 }
+            .sortedBy { it.dailyPnl }
+            .take(5)
+    }
+
+    if (positivePositions.isEmpty() && negativePositions.isEmpty()) return
+
+    Column(
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = "Top denné pohyby podľa P&L",
+            style = MaterialTheme.typography.titleSmall.copy(
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            ),
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+
+        // Top Gainers
+        if (positivePositions.isNotEmpty()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(bottom = 8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(PositiveGreen)
+                )
+                Text(
+                    text = "Najväčšie denné zisky",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextSecondary
+                    )
+                )
+            }
+
+            val maxPositivePnl = positivePositions.maxOfOrNull { it.dailyPnl } ?: 1.0
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                positivePositions.forEach { position ->
+                    val prevValue = position.marketValue - position.dailyPnl
+                    val pnlPct = if (prevValue > 0) {
+                        (position.dailyPnl / prevValue) * 100.0
+                    } else if (position.marketValue > 0) {
+                        (position.dailyPnl / position.marketValue) * 100.0
+                    } else {
+                        0.0
+                    }
+                    val heightFraction = (position.dailyPnl / maxPositivePnl).toFloat().coerceIn(0.18f, 1f)
+                    DailyPnlBarColumn(
+                        symbol = position.symbol,
+                        amountText = position.dailyPnl.toCompactSignedCurrencyString(currency),
+                        percentageText = pnlPct.toPercentageString(),
+                        heightFraction = heightFraction,
+                        isPositive = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                repeat(5 - positivePositions.size) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+
+        // Top Losers
+        if (negativePositions.isNotEmpty()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(bottom = 8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(NegativeRed)
+                )
+                Text(
+                    text = "Najväčšie denné straty",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextSecondary
+                    )
+                )
+            }
+
+            val maxNegativeAbsPnl = negativePositions.maxOfOrNull { kotlin.math.abs(it.dailyPnl) } ?: 1.0
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                negativePositions.forEach { position ->
+                    val prevValue = position.marketValue - position.dailyPnl
+                    val pnlPct = if (prevValue > 0) {
+                        (position.dailyPnl / prevValue) * 100.0
+                    } else if (position.marketValue > 0) {
+                        (position.dailyPnl / position.marketValue) * 100.0
+                    } else {
+                        0.0
+                    }
+                    val heightFraction = (kotlin.math.abs(position.dailyPnl) / maxNegativeAbsPnl).toFloat().coerceIn(0.18f, 1f)
+                    DailyPnlBarColumn(
+                        symbol = position.symbol,
+                        amountText = position.dailyPnl.toCompactSignedCurrencyString(currency),
+                        percentageText = pnlPct.toPercentageString(),
+                        heightFraction = heightFraction,
+                        isPositive = false,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                repeat(5 - negativePositions.size) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DailyPnlBarColumn(
+    symbol: String,
+    amountText: String,
+    percentageText: String,
+    heightFraction: Float,
+    isPositive: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val barColor = if (isPositive) PositiveGreen else NegativeRed
+    val barHeight = 44.dp * heightFraction
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+    ) {
+        // Amount text above bar
+        Text(
+            text = amountText,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                color = barColor
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        // Percentage text above bar
+        Text(
+            text = percentageText,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = barColor
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        Spacer(modifier = Modifier.height(3.dp))
+
+        // Bar container
+        Box(
+            modifier = Modifier
+                .height(48.dp)
+                .fillMaxWidth(),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(16.dp)
+                    .height(barHeight)
+                    .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 2.dp, bottomEnd = 2.dp))
+                    .background(barColor)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Symbol ticker text below bar
+        Text(
+            text = symbol,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -1236,6 +1490,9 @@ fun BreakdownAnalyticsCard(
     sectorAllocations: List<SectorAllocation>,
     geographyAllocations: List<GeographyAllocation>,
     positions: List<Position>,
+    isExpanded: Boolean = false,
+    onToggleExpand: () -> Unit = {},
+    onBreakdownTabSelected: (BreakdownTab) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -1251,47 +1508,102 @@ fun BreakdownAnalyticsCard(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            Text(
-                text = "Rozdelenie: ${selectedBreakdownTab.displayName}",
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleExpand() },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Rozdelenie: ${selectedBreakdownTab.displayName}",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
                 )
-            )
 
-            Spacer(modifier = Modifier.height(12.dp))
+                IconButton(onClick = onToggleExpand) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = "Rozbaliť rozdelenie",
+                        tint = TextSecondary
+                    )
+                }
+            }
 
-            when (selectedBreakdownTab) {
-                BreakdownTab.INDUSTRY -> {
-                    sectorAllocations.forEach { item ->
-                        BreakdownProgressItem(
-                            title = item.sector,
-                            percentage = item.percentage,
-                            valueStr = item.value.toCurrencyString(),
-                            barColor = parseColorHex(item.colorHex)
-                        )
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Column(modifier = Modifier.padding(top = 12.dp)) {
+                    HorizontalDivider(color = CardBorderColor, thickness = 1.dp)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        BreakdownTab.entries.forEach { tab ->
+                            val isSelected = tab == selectedBreakdownTab
+                            Surface(
+                                onClick = { onBreakdownTabSelected(tab) },
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (isSelected) DarkPill else UnselectedPillBg,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.padding(vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = tab.displayName,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected) Color.White else UnselectedPillText
+                                        )
+                                    )
+                                }
+                            }
+                        }
                     }
-                }
-                BreakdownTab.GEOGRAPHY -> {
-                    geographyAllocations.forEachIndexed { index, item ->
-                        val colors = listOf(Color(0xFF3B82F6), Color(0xFF10B981), Color(0xFFF59E0B), Color(0xFF8B5CF6))
-                        BreakdownProgressItem(
-                            title = item.country,
-                            percentage = item.percentage,
-                            valueStr = item.value.toCurrencyString(),
-                            barColor = colors[index % colors.size]
-                        )
-                    }
-                }
-                BreakdownTab.CATEGORY -> {
-                    val categoryBreakdown = rememberCategoryBreakdown(positions)
-                    categoryBreakdown.forEach { item ->
-                        BreakdownProgressItem(
-                            title = item.title,
-                            percentage = item.percentage,
-                            valueStr = item.valueStr,
-                            barColor = item.barColor
-                        )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    when (selectedBreakdownTab) {
+                        BreakdownTab.INDUSTRY -> {
+                            sectorAllocations.forEach { item ->
+                                BreakdownProgressItem(
+                                    title = item.sector,
+                                    percentage = item.percentage,
+                                    valueStr = item.value.toCurrencyString(),
+                                    barColor = parseColorHex(item.colorHex)
+                                )
+                            }
+                        }
+                        BreakdownTab.GEOGRAPHY -> {
+                            geographyAllocations.forEachIndexed { index, item ->
+                                val colors = listOf(Color(0xFF3B82F6), Color(0xFF10B981), Color(0xFFF59E0B), Color(0xFF8B5CF6))
+                                BreakdownProgressItem(
+                                    title = item.country,
+                                    percentage = item.percentage,
+                                    valueStr = item.value.toCurrencyString(),
+                                    barColor = colors[index % colors.size]
+                                )
+                            }
+                        }
+                        BreakdownTab.CATEGORY -> {
+                            val categoryBreakdown = rememberCategoryBreakdown(positions)
+                            categoryBreakdown.forEach { item ->
+                                BreakdownProgressItem(
+                                    title = item.title,
+                                    percentage = item.percentage,
+                                    valueStr = item.valueStr,
+                                    barColor = item.barColor
+                                )
+                            }
+                        }
                     }
                 }
             }

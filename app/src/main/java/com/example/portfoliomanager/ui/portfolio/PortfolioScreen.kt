@@ -46,6 +46,8 @@ fun PortfolioScreen(
     PortfolioScreenContent(
         uiState = uiState,
         onToggleBalancesExpanded = viewModel::toggleBalancesExpanded,
+        onToggleBreakdownExpanded = viewModel::toggleBreakdownExpanded,
+        onBreakdownTabSelected = viewModel::onBreakdownTabSelected,
         onTogglePositionExpanded = viewModel::togglePositionExpanded,
         onSearchQueryChanged = viewModel::onSearchQueryChanged,
         onCategoryFilterSelected = viewModel::onCategoryFilterSelected,
@@ -68,6 +70,8 @@ fun PortfolioScreen(
 fun PortfolioScreenContent(
     uiState: PortfolioUiState,
     onToggleBalancesExpanded: () -> Unit = {},
+    onToggleBreakdownExpanded: () -> Unit = {},
+    onBreakdownTabSelected: (BreakdownTab) -> Unit = {},
     onTogglePositionExpanded: (String) -> Unit = {},
     onSearchQueryChanged: (String) -> Unit = {},
     onCategoryFilterSelected: (CategoryFilter) -> Unit = {},
@@ -160,7 +164,8 @@ fun PortfolioScreenContent(
                                     onTimeRangeSelected = onTimeRangeSelected,
                                     dailyPnl = portfolioData.accountSummary.dailyPnl,
                                     dailyPnlPercentage = portfolioData.accountSummary.dailyPnlPercentage,
-                                    currency = portfolioData.accountSummary.currency
+                                    currency = portfolioData.accountSummary.currency,
+                                    positions = portfolioData.positions
                                 )
                             }
 
@@ -179,7 +184,10 @@ fun PortfolioScreenContent(
                                     selectedBreakdownTab = uiState.selectedBreakdownTab,
                                     sectorAllocations = uiState.sectorBreakdown.ifEmpty { portfolioData.sectorAllocations },
                                     geographyAllocations = portfolioData.geographyAllocations,
-                                    positions = portfolioData.positions
+                                    positions = portfolioData.positions,
+                                    isExpanded = uiState.isBreakdownExpanded,
+                                    onToggleExpand = onToggleBreakdownExpanded,
+                                    onBreakdownTabSelected = onBreakdownTabSelected
                                 )
                             }
                         }

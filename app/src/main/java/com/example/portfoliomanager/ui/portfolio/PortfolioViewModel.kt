@@ -235,6 +235,13 @@ class PortfolioViewModel(
     }
 
     /**
+     * Toggles expansion state for Analytics Breakdown card.
+     */
+    fun toggleBreakdownExpanded() {
+        _uiState.update { it.copy(isBreakdownExpanded = !it.isBreakdownExpanded) }
+    }
+
+    /**
      * Toggles expansion state for an individual asset/position detail card.
      */
     fun togglePositionExpanded(positionId: String) {

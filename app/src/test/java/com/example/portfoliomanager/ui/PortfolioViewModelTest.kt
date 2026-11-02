@@ -136,17 +136,24 @@ class PortfolioViewModelTest {
 
     @Test
     fun `expandable UI state toggles correctly`() {
-        // Balances expansion (default true)
-        assertTrue(viewModel.uiState.value.isBalancesExpanded)
-        viewModel.toggleBalancesExpanded()
+        // Balances expansion (default false)
         assertFalse(viewModel.uiState.value.isBalancesExpanded)
         viewModel.toggleBalancesExpanded()
         assertTrue(viewModel.uiState.value.isBalancesExpanded)
+        viewModel.toggleBalancesExpanded()
+        assertFalse(viewModel.uiState.value.isBalancesExpanded)
 
         // Margin expansion
         assertFalse(viewModel.uiState.value.isMarginExpanded)
         viewModel.toggleMarginExpanded()
         assertTrue(viewModel.uiState.value.isMarginExpanded)
+
+        // Breakdown expansion (default false)
+        assertFalse(viewModel.uiState.value.isBreakdownExpanded)
+        viewModel.toggleBreakdownExpanded()
+        assertTrue(viewModel.uiState.value.isBreakdownExpanded)
+        viewModel.toggleBreakdownExpanded()
+        assertFalse(viewModel.uiState.value.isBreakdownExpanded)
 
         // Position expansion
         assertTrue(viewModel.uiState.value.expandedPositionIds.isEmpty())
