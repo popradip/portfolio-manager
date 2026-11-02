@@ -464,14 +464,14 @@ class PortfolioRepositoryImpl(
         return try {
             val savedJson = preferencesRepository?.manualTradesFlow?.first() ?: ""
             val existingTrades = deserializeTrades(savedJson)
-            val updatedTrades = existingTrades + trade
+            val updatedTrades = (existingTrades + trade).distinctBy { it.id }
             val newJson = serializeTrades(updatedTrades)
             preferencesRepository?.saveManualTrades(newJson)
 
             val baseData = cachedPortfolioData ?: getPortfolioData(forceRefresh = false).getOrNull()
                 ?: MockPortfolioData.getSamplePortfolio()
 
-            val enrichedData = applySavedManualTrades(baseData, listOf(trade))
+            val enrichedData = applySavedManualTrades(baseData)
             cachedPortfolioData = enrichedData
             Result.success(enrichedData)
         } catch (e: Exception) {
@@ -482,7 +482,7 @@ class PortfolioRepositoryImpl(
 
     private suspend fun applySavedManualTrades(data: PortfolioData, extraTrades: List<Trade> = emptyList()): PortfolioData {
         val savedJson = preferencesRepository?.manualTradesFlow?.first() ?: ""
-        val savedTrades = deserializeTrades(savedJson) + extraTrades
+        val savedTrades = (deserializeTrades(savedJson) + extraTrades).distinctBy { it.id }
         if (savedTrades.isEmpty()) return data
 
         val tradesBySymbol = savedTrades.groupBy { it.symbol.trim().uppercase() }
@@ -490,7 +490,7 @@ class PortfolioRepositoryImpl(
         val updatedPositions = data.positions.map { pos ->
             val posSymbol = pos.symbol.trim().uppercase()
             val posTrades = tradesBySymbol[posSymbol] ?: emptyList()
-            val newTrades = posTrades.filter { t -> pos.trades.none { existing -> existing.id == t.id } }
+            val newTrades = posTrades.filter { t -> pos.trades.none { existing -> existing.id == t.id } }.distinctBy { it.id }
             if (newTrades.isEmpty()) {
                 pos
             } else {
