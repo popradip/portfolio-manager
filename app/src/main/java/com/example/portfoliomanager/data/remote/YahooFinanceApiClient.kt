@@ -90,25 +90,15 @@ open class YahooFinanceApiClient(
             var rawPrice = metaObj.optDouble("regularMarketPrice", 0.0)
             if (rawPrice <= 0.0) return null
 
-            var rawPrevClose = metaObj.optDouble("previousClose", metaObj.optDouble("chartPreviousClose", rawPrice))
             var rawCurrency = metaObj.optString("currency", "USD").uppercase()
-
-            // Handle British pence (GBp / GBX) where price is in pence (1/100th of GBP)
             val isPence = rawCurrency == "GBP" || rawCurrency == "GBX"
             if (isPence) {
                 rawCurrency = "GBP"
                 rawPrice /= 100.0
-                rawPrevClose /= 100.0
             }
 
-            val currentPrice = rawPrice
-            val previousClose = rawPrevClose
-            val dailyChange = currentPrice - previousClose
-            val dailyChangePercentage = if (previousClose > 0.0) (dailyChange / previousClose) * 100.0 else 0.0
-
-            AppLogger.d("YahooFinanceApiClient", "Successfully fetched $originalSymbol ($yahooSymbol): price=$currentPrice, currency=$rawCurrency, change=$dailyChange")
-
             val sparklinePoints = mutableListOf<Double>()
+            val closePrices = mutableListOf<Double>()
             val indicatorsObj = resultObj.optJSONObject("indicators")
             val quoteArr = indicatorsObj?.optJSONArray("quote")
             if (quoteArr != null && quoteArr.length() > 0) {
@@ -121,11 +111,35 @@ open class YahooFinanceApiClient(
                             if (price > 0.0) {
                                 val finalPrice = if (isPence) price / 100.0 else price
                                 sparklinePoints.add(finalPrice)
+                                closePrices.add(finalPrice)
                             }
                         }
                     }
                 }
             }
+
+            var rawPrevClose = metaObj.optDouble("previousClose", 0.0)
+            if (isPence && rawPrevClose > 0.0) {
+                rawPrevClose /= 100.0
+            }
+
+            // Fallback: If previousClose is missing in Yahoo meta or invalid, use second-to-last close price from daily series
+            if (rawPrevClose <= 0.0) {
+                if (closePrices.size >= 2) {
+                    rawPrevClose = closePrices[closePrices.size - 2]
+                } else if (closePrices.isNotEmpty()) {
+                    rawPrevClose = closePrices.last()
+                } else {
+                    rawPrevClose = rawPrice
+                }
+            }
+
+            val currentPrice = rawPrice
+            val previousClose = rawPrevClose
+            val dailyChange = currentPrice - previousClose
+            val dailyChangePercentage = if (previousClose > 0.0) (dailyChange / previousClose) * 100.0 else 0.0
+
+            AppLogger.d("YahooFinanceApiClient", "Successfully fetched $originalSymbol ($yahooSymbol): price=$currentPrice, prevClose=$previousClose, currency=$rawCurrency, change=$dailyChange")
 
             YahooMarketData(
                 symbol = originalSymbol,
@@ -156,10 +170,40 @@ open class YahooFinanceApiClient(
             "BTC", "BITCOIN" -> listOf("BTC-USD", "BTC-EUR")
             "ETH", "ETHEREUM" -> listOf("ETH-USD", "ETH-EUR")
             else -> {
-                if (!upper.contains(".")) {
-                    listOf("$upper.DE", "$upper.L", upper)
-                } else {
-                    listOf(upper)
+                when {
+                    upper.endsWith(".US") -> {
+                        val base = upper.removeSuffix(".US")
+                        listOf(base, upper)
+                    }
+                    upper.endsWith(".UK") -> {
+                        val base = upper.removeSuffix(".UK")
+                        listOf("$base.L", base)
+                    }
+                    upper.endsWith(".PL") -> {
+                        val base = upper.removeSuffix(".PL")
+                        listOf("$base.WA", base)
+                    }
+                    upper.endsWith(".FI") -> {
+                        val base = upper.removeSuffix(".FI")
+                        listOf("$base.HE", base)
+                    }
+                    upper.endsWith(".FR") -> {
+                        val base = upper.removeSuffix(".FR")
+                        listOf("$base.PA", base)
+                    }
+                    upper.endsWith(".NL") -> {
+                        val base = upper.removeSuffix(".NL")
+                        listOf("$base.AS", base)
+                    }
+                    upper.endsWith(".DE") -> {
+                        val base = upper.removeSuffix(".DE")
+                        val usMapped = if (base == "NVD") "NVDA" else base
+                        listOf(upper, usMapped, base)
+                    }
+                    !upper.contains(".") -> {
+                        listOf(upper, "$upper.DE", "$upper.L")
+                    }
+                    else -> listOf(upper)
                 }
             }
         }
