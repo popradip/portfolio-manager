@@ -555,51 +555,31 @@ fun PortfolioEvolutionChartCard(
                     )
                 }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    // Chart Type Toggle Chip
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFFF1F5F9),
-                        modifier = Modifier.clickable {
-                            chartType = if (chartType == PortfolioChartType.BAR) PortfolioChartType.LINE else PortfolioChartType.BAR
-                        }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (chartType == PortfolioChartType.BAR) Icons.Rounded.Analytics else Icons.AutoMirrored.Rounded.TrendingUp,
-                                contentDescription = "Typ grafu",
-                                tint = DarkPill,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = if (chartType == PortfolioChartType.BAR) "Stĺpce" else "Čiara",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = DarkPill
-                                )
-                            )
-                        }
+                // Chart Type Toggle Chip
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFFF1F5F9),
+                    modifier = Modifier.clickable {
+                        chartType = if (chartType == PortfolioChartType.BAR) PortfolioChartType.LINE else PortfolioChartType.BAR
                     }
-
-                    // Active Date Chip
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFF1F5F9)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        Icon(
+                            imageVector = if (chartType == PortfolioChartType.BAR) Icons.Rounded.Analytics else Icons.AutoMirrored.Rounded.TrendingUp,
+                            contentDescription = "Typ grafu",
+                            tint = DarkPill,
+                            modifier = Modifier.size(14.dp)
+                        )
                         Text(
-                            text = activePoint?.dateLabel ?: "Dnes",
+                            text = if (chartType == PortfolioChartType.BAR) "Stĺpce" else "Čiara",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.SemiBold,
                                 color = DarkPill
-                            ),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
                         )
                     }
                 }
@@ -701,6 +681,20 @@ fun PortfolioEvolutionChartCard(
                         )
                     }
                 }
+            }
+
+            if (activePoint != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Active Point Date Label below "Dnes" / Changes row
+                Text(
+                    text = activePoint!!.dateLabel,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 11.sp,
+                        color = TextSecondary
+                    )
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
