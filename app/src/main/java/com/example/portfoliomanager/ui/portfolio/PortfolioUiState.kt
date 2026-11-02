@@ -71,5 +71,6 @@ data class PortfolioUiState(
     val isImportingCsv: Boolean = false,
     val importSuccessMessage: String? = null,
     val errorMessage: String? = null,
-    val addTradePosition: Position? = null
+    val addTradePosition: Position? = null,
+    val selectedPositionIdForScroll: String? = null
 )

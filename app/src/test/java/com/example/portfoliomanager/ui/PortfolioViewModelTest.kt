@@ -4,6 +4,7 @@ import com.example.portfoliomanager.data.mock.MockPortfolioData
 import com.example.portfoliomanager.data.model.AssetCategory
 import com.example.portfoliomanager.data.model.PortfolioData
 import com.example.portfoliomanager.data.repository.PortfolioRepository
+import com.example.portfoliomanager.ui.portfolio.BottomNavTab
 import com.example.portfoliomanager.ui.portfolio.CategoryFilter
 import com.example.portfoliomanager.ui.portfolio.PortfolioViewModel
 import com.example.portfoliomanager.ui.portfolio.PositionSortOption
@@ -163,6 +164,27 @@ class PortfolioViewModelTest {
         assertEquals(setOf("pos_1", "pos_2"), viewModel.uiState.value.expandedPositionIds)
         viewModel.togglePositionExpanded("pos_1")
         assertEquals(setOf("pos_2"), viewModel.uiState.value.expandedPositionIds)
+    }
+
+    @Test
+    fun `navigateToPosition updates tab, clears search filters, expands position and sets scroll target`() {
+        // Set search query and category filter
+        viewModel.onSearchQueryChanged("SPY")
+        viewModel.onCategoryFilterSelected(CategoryFilter.ETFS)
+
+        // Navigate to pos_1
+        viewModel.navigateToPosition("pos_1")
+
+        val state = viewModel.uiState.value
+        assertEquals(BottomNavTab.ASSETS, state.selectedBottomNavTab)
+        assertEquals("", state.searchQuery)
+        assertEquals(CategoryFilter.ALL, state.selectedCategoryFilter)
+        assertTrue(state.expandedPositionIds.contains("pos_1"))
+        assertEquals("pos_1", state.selectedPositionIdForScroll)
+
+        // Handle scroll
+        viewModel.onPositionScrollHandled()
+        assertNull(viewModel.uiState.value.selectedPositionIdForScroll)
     }
 
     @Test

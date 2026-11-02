@@ -479,6 +479,7 @@ fun PortfolioEvolutionChartCard(
     dailyPnlPercentage: Double = 0.0,
     currency: String = "EUR",
     positions: List<Position> = emptyList(),
+    onPositionClick: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var activePoint by remember(historyData) { mutableStateOf<PortfolioHistoryPoint?>(null) }
@@ -935,7 +936,8 @@ fun PortfolioEvolutionChartCard(
 
                 TopDailyPnlMoversSection(
                     positions = positions,
-                    currency = currency
+                    currency = currency,
+                    onPositionClick = onPositionClick
                 )
             }
         }
@@ -970,6 +972,7 @@ fun Double.toCompactSignedCurrencyString(currencyCodeOrSymbol: String = "EUR"): 
 fun TopDailyPnlMoversSection(
     positions: List<Position>,
     currency: String = "EUR",
+    onPositionClick: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val positivePositions = remember(positions) {
@@ -1046,6 +1049,7 @@ fun TopDailyPnlMoversSection(
                         percentageText = pnlPct.toPercentageString(),
                         heightFraction = heightFraction,
                         isPositive = true,
+                        onClick = { onPositionClick(position.id) },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -1099,6 +1103,7 @@ fun TopDailyPnlMoversSection(
                         percentageText = pnlPct.toPercentageString(),
                         heightFraction = heightFraction,
                         isPositive = false,
+                        onClick = { onPositionClick(position.id) },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -1117,6 +1122,7 @@ private fun DailyPnlBarColumn(
     percentageText: String,
     heightFraction: Float,
     isPositive: Boolean,
+    onClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val barColor = if (isPositive) PositiveGreen else NegativeRed
@@ -1125,6 +1131,9 @@ private fun DailyPnlBarColumn(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onClick() }
+            .padding(vertical = 4.dp, horizontal = 2.dp)
     ) {
         // Amount text above bar
         Text(
@@ -1725,15 +1734,12 @@ private fun parseColorHex(hex: String): Color {
 // --- Your Assets Holdings Section ---
 
 @Composable
-fun YourAssetsSection(
-    positions: List<Position>,
+fun YourAssetsHeader(
+    positionsCount: Int,
     searchQuery: String,
     selectedCategoryFilter: CategoryFilter,
-    expandedPositionIds: Set<String>,
     onSearchQueryChanged: (String) -> Unit,
     onCategoryFilterSelected: (CategoryFilter) -> Unit,
-    onTogglePositionExpanded: (String) -> Unit,
-    onAddTradeClick: (Position) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var isSearchVisible by remember { mutableStateOf(true) }
@@ -1768,7 +1774,7 @@ fun YourAssetsSection(
                     color = DarkPill
                 ) {
                     Text(
-                        text = "${positions.size}",
+                        text = positionsCount.toString(),
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -1894,21 +1900,51 @@ fun YourAssetsSection(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun YourAssetsEmptyState(modifier: Modifier = Modifier) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(32.dp)
+    ) {
+        Text(
+            text = "Žiadne aktíva nezodpovedajú vyhľadávaniu alebo filtru.",
+            style = MaterialTheme.typography.bodyMedium.copy(color = TextSecondary)
+        )
+    }
+}
+
+@Composable
+fun YourAssetsSection(
+    positions: List<Position>,
+    searchQuery: String,
+    selectedCategoryFilter: CategoryFilter,
+    expandedPositionIds: Set<String>,
+    onSearchQueryChanged: (String) -> Unit,
+    onCategoryFilterSelected: (CategoryFilter) -> Unit,
+    onTogglePositionExpanded: (String) -> Unit,
+    onAddTradeClick: (Position) -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth()
+    ) {
+        YourAssetsHeader(
+            positionsCount = positions.size,
+            searchQuery = searchQuery,
+            selectedCategoryFilter = selectedCategoryFilter,
+            onSearchQueryChanged = onSearchQueryChanged,
+            onCategoryFilterSelected = onCategoryFilterSelected
+        )
 
         Spacer(modifier = Modifier.height(8.dp))
 
         if (positions.isEmpty()) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(32.dp)
-            ) {
-                Text(
-                    text = "Žiadne aktíva nezodpovedajú vyhľadávaniu alebo filtru.",
-                    style = MaterialTheme.typography.bodyMedium.copy(color = TextSecondary)
-                )
-            }
+            YourAssetsEmptyState()
         } else {
             positions.forEach { position ->
                 val isExpanded = expandedPositionIds.contains(position.id)

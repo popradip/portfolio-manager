@@ -485,6 +485,44 @@ class PortfolioViewModel(
     }
 
     /**
+     * Navigates to a specific position in the ASSETS tab, expands it, and clears filters.
+     */
+    fun navigateToPosition(positionId: String) {
+        _uiState.update { state ->
+            val data = state.portfolioData
+            val positions = data?.positions ?: emptyList()
+            val targetPos = positions.find { it.id == positionId || it.symbol.equals(positionId, ignoreCase = true) }
+            val actualId = targetPos?.id ?: positionId
+
+            val (filtered, sectors) = processPositionsAndSectors(
+                positions = positions,
+                searchQuery = "",
+                categoryFilter = CategoryFilter.ALL,
+                sortOption = state.selectedSortOption,
+                sortOrder = state.sortOrder,
+                fallbackSectors = data?.sectorAllocations ?: emptyList()
+            )
+
+            state.copy(
+                selectedBottomNavTab = BottomNavTab.ASSETS,
+                searchQuery = "",
+                selectedCategoryFilter = CategoryFilter.ALL,
+                filteredPositions = filtered,
+                sectorBreakdown = sectors,
+                expandedPositionIds = state.expandedPositionIds + actualId,
+                selectedPositionIdForScroll = actualId
+            )
+        }
+    }
+
+    /**
+     * Clears pending scroll target once navigation scroll has completed.
+     */
+    fun onPositionScrollHandled() {
+        _uiState.update { it.copy(selectedPositionIdForScroll = null) }
+    }
+
+    /**
      * Shows or hides IBKR Settings / Live Sync Modal Dialog.
      */
     fun toggleSettingsDialog(isOpen: Boolean) {

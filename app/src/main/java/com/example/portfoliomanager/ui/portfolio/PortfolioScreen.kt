@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -61,6 +64,8 @@ fun PortfolioScreen(
         onOpenAddTradeDialog = viewModel::onOpenAddTradeDialog,
         onDismissAddTradeDialog = viewModel::onDismissAddTradeDialog,
         onAddManualTrade = viewModel::addManualTrade,
+        onPositionClick = viewModel::navigateToPosition,
+        onPositionScrollHandled = viewModel::onPositionScrollHandled,
         modifier = modifier
     )
 }
@@ -85,9 +90,26 @@ fun PortfolioScreenContent(
     onOpenAddTradeDialog: (com.example.portfoliomanager.data.model.Position) -> Unit = {},
     onDismissAddTradeDialog: () -> Unit = {},
     onAddManualTrade: (positionId: String, quantity: Double, price: Double, date: String, commission: Double) -> Unit = { _, _, _, _, _ -> },
+    onPositionClick: (String) -> Unit = {},
+    onPositionScrollHandled: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val portfolioData = uiState.portfolioData ?: MockPortfolioData.getSamplePortfolio()
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(uiState.selectedPositionIdForScroll, uiState.selectedBottomNavTab) {
+        val targetId = uiState.selectedPositionIdForScroll
+        if (targetId != null && uiState.selectedBottomNavTab == BottomNavTab.ASSETS) {
+            val displayPositions = uiState.filteredPositions.ifEmpty { portfolioData.positions }
+            val targetIndex = displayPositions.indexOfFirst {
+                it.id == targetId || it.symbol.equals(targetId, ignoreCase = true)
+            }
+            if (targetIndex != -1) {
+                listState.animateScrollToItem(targetIndex + 1)
+            }
+            onPositionScrollHandled()
+        }
+    }
 
     Scaffold(
         contentWindowInsets = WindowInsets.systemBars,
@@ -119,91 +141,110 @@ fun PortfolioScreenContent(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier.fillMaxSize()
                     ) {
-                    // Live Syncing Progress Indicator Banner
-                    if (uiState.isRefreshing) {
-                        item {
-                            SyncingBanner()
+                        // Live Syncing Progress Indicator Banner
+                        if (uiState.isRefreshing) {
+                            item {
+                                SyncingBanner()
+                            }
                         }
-                    }
 
-                    // Error Feedback Banner
-                    if (uiState.errorMessage != null) {
-                        item {
-                            ErrorBanner(
-                                errorMessage = uiState.errorMessage,
-                                onDismiss = onClearErrorMessage,
-                                onRetry = onRefreshData
-                            )
-                        }
-                    }
-
-                    when (uiState.selectedBottomNavTab) {
-                        BottomNavTab.HOME -> {
-                            // Account Summary & Net Liquidity Card
+                        // Error Feedback Banner
+                        if (uiState.errorMessage != null) {
                             item {
-                                AccountSummaryCard(
-                                    accountSummary = portfolioData.accountSummary,
-                                    onImportClick = { onToggleSettingsDialog(true) }
-                                )
-                            }
-
-                            // Interactive Portfolio Evolution Chart Card
-                            item {
-                                PortfolioEvolutionChartCard(
-                                    historyData = uiState.portfolioHistoryData,
-                                    selectedTimeRange = uiState.selectedTimeRange,
-                                    onTimeRangeSelected = onTimeRangeSelected,
-                                    dailyPnl = portfolioData.accountSummary.dailyPnl,
-                                    dailyPnlPercentage = portfolioData.accountSummary.dailyPnlPercentage,
-                                    currency = portfolioData.accountSummary.currency,
-                                    positions = portfolioData.positions
-                                )
-                            }
-
-                            // Expandable Portfolio Statistics Card
-                            item {
-                                ExpandableBalancesCard(
-                                    portfolioData = portfolioData,
-                                    isExpanded = uiState.isBalancesExpanded,
-                                    onToggleExpand = onToggleBalancesExpanded
-                                )
-                            }
-
-                            // Sector / Geography / Industry Analytics Breakdown Card
-                            item {
-                                BreakdownAnalyticsCard(
-                                    selectedBreakdownTab = uiState.selectedBreakdownTab,
-                                    sectorAllocations = uiState.sectorBreakdown.ifEmpty { portfolioData.sectorAllocations },
-                                    geographyAllocations = portfolioData.geographyAllocations,
-                                    positions = portfolioData.positions,
-                                    isExpanded = uiState.isBreakdownExpanded,
-                                    onToggleExpand = onToggleBreakdownExpanded,
-                                    onBreakdownTabSelected = onBreakdownTabSelected
+                                ErrorBanner(
+                                    errorMessage = uiState.errorMessage,
+                                    onDismiss = onClearErrorMessage,
+                                    onRetry = onRefreshData
                                 )
                             }
                         }
 
-                        BottomNavTab.ASSETS -> {
-                            // Holdings / "Your Assets" Section
-                            item {
-                                YourAssetsSection(
-                                    positions = uiState.filteredPositions.ifEmpty { portfolioData.positions },
-                                    searchQuery = uiState.searchQuery,
-                                    selectedCategoryFilter = uiState.selectedCategoryFilter,
-                                    expandedPositionIds = uiState.expandedPositionIds,
-                                    onSearchQueryChanged = onSearchQueryChanged,
-                                    onCategoryFilterSelected = onCategoryFilterSelected,
-                                    onTogglePositionExpanded = onTogglePositionExpanded,
-                                    onAddTradeClick = onOpenAddTradeDialog
-                                )
+                        when (uiState.selectedBottomNavTab) {
+                            BottomNavTab.HOME -> {
+                                // Account Summary & Net Liquidity Card
+                                item {
+                                    AccountSummaryCard(
+                                        accountSummary = portfolioData.accountSummary,
+                                        onImportClick = { onToggleSettingsDialog(true) }
+                                    )
+                                }
+
+                                // Interactive Portfolio Evolution Chart Card
+                                item {
+                                    PortfolioEvolutionChartCard(
+                                        historyData = uiState.portfolioHistoryData,
+                                        selectedTimeRange = uiState.selectedTimeRange,
+                                        onTimeRangeSelected = onTimeRangeSelected,
+                                        dailyPnl = portfolioData.accountSummary.dailyPnl,
+                                        dailyPnlPercentage = portfolioData.accountSummary.dailyPnlPercentage,
+                                        currency = portfolioData.accountSummary.currency,
+                                        positions = portfolioData.positions,
+                                        onPositionClick = onPositionClick
+                                    )
+                                }
+
+                                // Expandable Portfolio Statistics Card
+                                item {
+                                    ExpandableBalancesCard(
+                                        portfolioData = portfolioData,
+                                        isExpanded = uiState.isBalancesExpanded,
+                                        onToggleExpand = onToggleBalancesExpanded
+                                    )
+                                }
+
+                                // Sector / Geography / Industry Analytics Breakdown Card
+                                item {
+                                    BreakdownAnalyticsCard(
+                                        selectedBreakdownTab = uiState.selectedBreakdownTab,
+                                        sectorAllocations = uiState.sectorBreakdown.ifEmpty { portfolioData.sectorAllocations },
+                                        geographyAllocations = portfolioData.geographyAllocations,
+                                        positions = portfolioData.positions,
+                                        isExpanded = uiState.isBreakdownExpanded,
+                                        onToggleExpand = onToggleBreakdownExpanded,
+                                        onBreakdownTabSelected = onBreakdownTabSelected
+                                    )
+                                }
+                            }
+
+                            BottomNavTab.ASSETS -> {
+                                val displayPositions = uiState.filteredPositions.ifEmpty { portfolioData.positions }
+
+                                item(key = "assets_header") {
+                                    YourAssetsHeader(
+                                        positionsCount = displayPositions.size,
+                                        searchQuery = uiState.searchQuery,
+                                        selectedCategoryFilter = uiState.selectedCategoryFilter,
+                                        onSearchQueryChanged = onSearchQueryChanged,
+                                        onCategoryFilterSelected = onCategoryFilterSelected
+                                    )
+                                }
+
+                                if (displayPositions.isEmpty()) {
+                                    item(key = "assets_empty") {
+                                        YourAssetsEmptyState()
+                                    }
+                                } else {
+                                    items(
+                                        items = displayPositions,
+                                        key = { position -> position.id }
+                                    ) { position ->
+                                        val isExpanded = uiState.expandedPositionIds.contains(position.id)
+                                        PositionCard(
+                                            position = position,
+                                            isExpanded = isExpanded,
+                                            onToggleExpand = { onTogglePositionExpanded(position.id) },
+                                            onAddTradeClick = { onOpenAddTradeDialog(position) }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
             // CSV Import Modal Dialog
             IbkrSettingsDialog(
