@@ -106,7 +106,7 @@ fun PortfolioScreenContent(
     LaunchedEffect(uiState.selectedPositionIdForScroll, uiState.selectedBottomNavTab) {
         val targetId = uiState.selectedPositionIdForScroll
         if (targetId != null && uiState.selectedBottomNavTab == BottomNavTab.ASSETS) {
-            val displayPositions = uiState.filteredPositions.ifEmpty { portfolioData.positions }
+            val displayPositions = uiState.filteredPositions
             val targetIndex = displayPositions.indexOfFirst {
                 it.id == targetId || it.symbol.equals(targetId, ignoreCase = true)
             }
@@ -205,7 +205,7 @@ fun PortfolioScreenContent(
                                 item {
                                     BreakdownAnalyticsCard(
                                         selectedBreakdownTab = uiState.selectedBreakdownTab,
-                                        sectorAllocations = uiState.sectorBreakdown.ifEmpty { portfolioData.sectorAllocations },
+                                        sectorAllocations = uiState.sectorBreakdown,
                                         geographyAllocations = portfolioData.geographyAllocations,
                                         positions = portfolioData.positions,
                                         isExpanded = uiState.isBreakdownExpanded,
@@ -216,7 +216,7 @@ fun PortfolioScreenContent(
                             }
 
                             BottomNavTab.ASSETS -> {
-                                val displayPositions = uiState.filteredPositions.ifEmpty { portfolioData.positions }
+                                val displayPositions = uiState.filteredPositions
 
                                 item(key = "assets_header") {
                                     YourAssetsHeader(

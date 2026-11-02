@@ -88,6 +88,11 @@ class PortfolioViewModelTest {
         viewModel.onSearchQueryChanged("NON_EXISTENT_TICKER")
         state = viewModel.uiState.value
         assertTrue(state.filteredPositions.isEmpty())
+
+        // Clearing search restores all positions
+        viewModel.onSearchQueryChanged("")
+        state = viewModel.uiState.value
+        assertEquals(8, state.filteredPositions.size)
     }
 
     @Test
