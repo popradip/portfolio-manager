@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.Analytics
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
@@ -54,6 +55,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -2714,6 +2719,49 @@ fun AddTradeDialog(
     var dateInput by remember { mutableStateOf(defaultDate) }
     var commissionInput by remember { mutableStateOf("0.0") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = remember(dateInput) {
+                try {
+                    java.time.LocalDate.parse(dateInput, java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+                        .atStartOfDay(java.time.ZoneOffset.UTC)
+                        .toInstant()
+                        .toEpochMilli()
+                } catch (_: Exception) {
+                    System.currentTimeMillis()
+                }
+            }
+        )
+
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            val selectedDate = java.time.Instant.ofEpochMilli(millis)
+                                .atZone(java.time.ZoneOffset.UTC)
+                                .toLocalDate()
+                            dateInput = selectedDate.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+                            errorMessage = null
+                        }
+                        showDatePicker = false
+                    }
+                ) {
+                    Text("OK", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("Zrušiť", style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2792,27 +2840,41 @@ fun AddTradeDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                OutlinedTextField(
-                    value = dateInput,
-                    onValueChange = {
-                        dateInput = it
-                        errorMessage = null
-                    },
-                    label = { Text("Dátum nákupu (YYYY-MM-DD)") },
-                    placeholder = { Text("YYYY-MM-DD") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedContainerColor = InputFieldBg,
-                        unfocusedContainerColor = InputFieldBg,
-                        focusedBorderColor = ActiveLimePill,
-                        unfocusedBorderColor = CardBorderColor,
-                        cursorColor = TextPrimary
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = dateInput,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Dátum nákupu") },
+                        placeholder = { Text("YYYY-MM-DD") },
+                        singleLine = true,
+                        trailingIcon = {
+                            IconButton(onClick = { showDatePicker = true }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.DateRange,
+                                    contentDescription = "Vybrať dátum z kalendára",
+                                    tint = TextPrimary
+                                )
+                            }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedContainerColor = InputFieldBg,
+                            unfocusedContainerColor = InputFieldBg,
+                            focusedBorderColor = ActiveLimePill,
+                            unfocusedBorderColor = CardBorderColor,
+                            cursorColor = TextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable { showDatePicker = true }
+                    )
+                }
 
                 OutlinedTextField(
                     value = commissionInput,
