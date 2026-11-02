@@ -74,6 +74,11 @@ interface PortfolioRepository {
      * Adds a manual purchase/trade to a position and persists it.
      */
     suspend fun addManualTrade(positionId: String, trade: Trade): Result<PortfolioData>
+
+    /**
+     * Saves or removes an alternative ticker for a position symbol and refreshes portfolio data.
+     */
+    suspend fun saveTickerOverride(originalSymbol: String, alternativeTicker: String): Result<PortfolioData>
 }
 
 class PortfolioRepositoryImpl(
@@ -104,13 +109,12 @@ class PortfolioRepositoryImpl(
             return Result.success(cachedPortfolioData!!)
         }
 
-        val baseResult = run {
+        val rawDataResult = run {
             val savedCsv = preferencesRepository?.importedCsvFlow?.first()
             if (!savedCsv.isNullOrBlank()) {
                 val parseResult = parseSavedImportedFiles(savedCsv)
                 if (parseResult.isSuccess) {
-                    val mergedData = parseResult.getOrThrow()
-                    Result.success(marketDataRepository.enrichPortfolioWithLivePrices(mergedData))
+                    parseResult
                 } else {
                     fetchFromApiOrMock(token, queryId)
                 }
@@ -119,11 +123,35 @@ class PortfolioRepositoryImpl(
             }
         }
 
-        return baseResult.map { data ->
-            val dataWithManualTrades = applySavedManualTrades(data)
+        val enrichedResult = rawDataResult.map { rawData ->
+            val dataWithOverrides = applySavedTickerOverrides(rawData)
+            if (rawData.isMockData) {
+                dataWithOverrides
+            } else {
+                marketDataRepository.enrichPortfolioWithLivePrices(dataWithOverrides)
+            }
+        }
+
+        return enrichedResult.map { enrichedData ->
+            val dataWithManualTrades = applySavedManualTrades(enrichedData)
             cachedPortfolioData = dataWithManualTrades
             dataWithManualTrades
         }
+    }
+
+    private suspend fun applySavedTickerOverrides(data: PortfolioData): PortfolioData {
+        val overrides = preferencesRepository?.tickerOverridesFlow?.first() ?: emptyMap()
+        if (overrides.isEmpty()) return data
+
+        val updatedPositions = data.positions.map { pos ->
+            val alt = overrides[pos.symbol.trim().uppercase()]
+            if (!alt.isNullOrBlank()) {
+                pos.copy(alternativeTicker = alt)
+            } else {
+                pos
+            }
+        }
+        return data.copy(positions = updatedPositions)
     }
 
     private fun parseSavedImportedFiles(rawSavedString: String): Result<PortfolioData> {
@@ -413,6 +441,20 @@ class PortfolioRepositoryImpl(
 
     override fun getSavedImportedCsv(): Flow<String?> {
         return preferencesRepository?.importedCsvFlow ?: flow { emit(null) }
+    }
+
+    override suspend fun saveTickerOverride(
+        originalSymbol: String,
+        alternativeTicker: String
+    ): Result<PortfolioData> {
+        return try {
+            preferencesRepository?.saveTickerOverride(originalSymbol, alternativeTicker)
+            cachedPortfolioData = null
+            getPortfolioData(forceRefresh = true)
+        } catch (e: Exception) {
+            AppLogger.e("PortfolioRepository", "Failed to save ticker override: ${e.message}", e)
+            Result.failure(e)
+        }
     }
 
     override suspend fun addManualTrade(

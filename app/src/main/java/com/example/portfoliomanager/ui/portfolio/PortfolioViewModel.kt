@@ -400,6 +400,42 @@ class PortfolioViewModel(
     }
 
     /**
+     * Opens dialog to edit alternative ticker for a position.
+     */
+    fun onOpenEditTickerDialog(position: Position) {
+        _uiState.update { it.copy(editTickerPosition = position) }
+    }
+
+    /**
+     * Dismisses the edit ticker dialog.
+     */
+    fun onDismissEditTickerDialog() {
+        _uiState.update { it.copy(editTickerPosition = null) }
+    }
+
+    /**
+     * Saves an alternative ticker for a position symbol, dismisses dialog and refreshes portfolio data.
+     */
+    fun saveTickerOverride(originalSymbol: String, alternativeTicker: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(editTickerPosition = null) }
+            val result = repository.saveTickerOverride(originalSymbol, alternativeTicker)
+            result.fold(
+                onSuccess = { updatedPortfolioData ->
+                    updatePortfolioDataState(updatedPortfolioData)
+                },
+                onFailure = { throwable ->
+                    _uiState.update { state ->
+                        state.copy(
+                            errorMessage = throwable.message ?: "Chyba pri ukladaní alternatívneho tickera."
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    /**
      * Adds a manual purchase trade to a position, recalculates portfolio metrics and persists it.
      */
     fun addManualTrade(

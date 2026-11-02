@@ -72,5 +72,6 @@ data class PortfolioUiState(
     val importSuccessMessage: String? = null,
     val errorMessage: String? = null,
     val addTradePosition: Position? = null,
+    val editTickerPosition: Position? = null,
     val selectedPositionIdForScroll: String? = null
 )

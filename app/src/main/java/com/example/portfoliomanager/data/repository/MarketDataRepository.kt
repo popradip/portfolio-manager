@@ -27,23 +27,23 @@ class MarketDataRepositoryImpl(
         try {
             val targetCurrency = portfolioData.accountSummary.currency.ifBlank { "EUR" }.uppercase()
 
-            // 1. Fetch live prices for all distinct positions in parallel
-            val distinctSymbols = portfolioData.positions.map { it.symbol }.distinct()
-            AppLogger.d("MarketDataRepository", "Enriching ${portfolioData.positions.size} positions (${distinctSymbols.joinToString()}) with Yahoo Finance live prices...")
+            // 1. Fetch live prices for all distinct effective tickers in parallel
+            val distinctTickers = portfolioData.positions.map { it.effectiveTicker }.distinct()
+            AppLogger.d("MarketDataRepository", "Enriching ${portfolioData.positions.size} positions (${distinctTickers.joinToString()}) with Yahoo Finance live prices...")
 
-            val marketDataDeferreds = distinctSymbols.map { symbol ->
-                async { symbol to yahooApiClient.fetchMarketData(symbol) }
+            val marketDataDeferreds = distinctTickers.map { ticker ->
+                async { ticker to yahooApiClient.fetchMarketData(ticker) }
             }
 
             val marketDataMap = marketDataDeferreds.awaitAll()
-                .mapNotNull { (sym, data) -> if (data != null) sym to data else null }
+                .mapNotNull { (ticker, data) -> if (data != null) ticker to data else null }
                 .toMap()
 
-            AppLogger.d("MarketDataRepository", "Received live market data for ${marketDataMap.size} of ${distinctSymbols.size} symbols.")
+            AppLogger.d("MarketDataRepository", "Received live market data for ${marketDataMap.size} of ${distinctTickers.size} tickers.")
 
             // 2. Resolve currencies for positions (update from Yahoo metadata if available)
             val updatedPositionCurrencies = portfolioData.positions.map { pos ->
-                val marketData = marketDataMap[pos.symbol]
+                val marketData = marketDataMap[pos.effectiveTicker]
                 val detectedCurrency = marketData?.currency?.ifBlank { null } ?: pos.currency.ifBlank { "USD" }
                 pos.copy(currency = detectedCurrency.uppercase())
             }
@@ -64,7 +64,7 @@ class MarketDataRepositoryImpl(
 
             // 4. Update each position with live prices and converted market value in target currency (EUR)
             val updatedPositions = updatedPositionCurrencies.map { pos ->
-                val marketData = marketDataMap[pos.symbol]
+                val marketData = marketDataMap[pos.effectiveTicker]
                 val fxRate = fxRatesMap[pos.currency] ?: 1.0
 
                 if (marketData != null) {

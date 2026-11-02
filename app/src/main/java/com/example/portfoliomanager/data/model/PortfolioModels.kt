@@ -76,8 +76,12 @@ data class Position(
     val sparklinePoints: List<Double> = emptyList(),
     val trades: List<Trade> = emptyList(),
     val currency: String = "USD",
-    val fxRateToPortfolio: Double = 1.0
-)
+    val fxRateToPortfolio: Double = 1.0,
+    val alternativeTicker: String? = null
+) {
+    val effectiveTicker: String
+        get() = alternativeTicker?.trim()?.takeIf { it.isNotBlank() } ?: symbol
+}
 
 data class SectorAllocation(
     val sector: String,

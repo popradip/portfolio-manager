@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.FilterList
@@ -975,15 +976,50 @@ fun TopDailyPnlMoversSection(
     onPositionClick: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val positivePositions = remember(positions) {
-        positions
+    val mergedPositions = remember(positions) {
+        positions.groupBy { it.effectiveTicker.uppercase() }.map { (effectiveSymbol, posList) ->
+            if (posList.size == 1) {
+                val single = posList.first()
+                if (single.alternativeTicker.isNullOrBlank()) {
+                    single
+                } else {
+                    single.copy(symbol = single.effectiveTicker)
+                }
+            } else {
+                val first = posList.first()
+                val totalDailyPnl = posList.sumOf { it.dailyPnl }
+                val totalMarketValue = posList.sumOf { it.marketValue }
+                val totalQty = posList.sumOf { it.quantity }
+                val totalCostBasis = posList.sumOf { it.costBasisPrice * it.quantity }
+                val totalPnl = posList.sumOf { it.totalPnl }
+                val costPrice = if (totalQty > 0.0) totalCostBasis / totalQty else first.costBasisPrice
+                val markPrice = if (totalQty > 0.0) totalMarketValue / totalQty else first.markPrice
+                val pnlPct = if (totalCostBasis > 0.0) (totalPnl / totalCostBasis) * 100.0 else 0.0
+
+                first.copy(
+                    symbol = effectiveSymbol,
+                    quantity = totalQty,
+                    costBasisPrice = costPrice,
+                    markPrice = markPrice,
+                    marketValue = totalMarketValue,
+                    dailyPnl = totalDailyPnl,
+                    totalPnl = totalPnl,
+                    pnlPercentage = pnlPct,
+                    trades = posList.flatMap { it.trades }
+                )
+            }
+        }
+    }
+
+    val positivePositions = remember(mergedPositions) {
+        mergedPositions
             .filter { it.dailyPnl > 0.0 }
             .sortedByDescending { it.dailyPnl }
             .take(5)
     }
 
-    val negativePositions = remember(positions) {
-        positions
+    val negativePositions = remember(mergedPositions) {
+        mergedPositions
             .filter { it.dailyPnl < 0.0 }
             .sortedBy { it.dailyPnl }
             .take(5)
@@ -1928,6 +1964,7 @@ fun YourAssetsSection(
     onCategoryFilterSelected: (CategoryFilter) -> Unit,
     onTogglePositionExpanded: (String) -> Unit,
     onAddTradeClick: (Position) -> Unit = {},
+    onEditTickerClick: (Position) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -1952,7 +1989,8 @@ fun YourAssetsSection(
                     position = position,
                     isExpanded = isExpanded,
                     onToggleExpand = { onTogglePositionExpanded(position.id) },
-                    onAddTradeClick = { onAddTradeClick(position) }
+                    onAddTradeClick = { onAddTradeClick(position) },
+                    onEditTickerClick = { onEditTickerClick(position) }
                 )
             }
         }
@@ -1967,6 +2005,7 @@ fun PositionCard(
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
     onAddTradeClick: () -> Unit = {},
+    onEditTickerClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isPositive = position.dailyPnl >= 0
@@ -2046,6 +2085,23 @@ fun PositionCard(
                                     ),
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
+                            }
+                            if (!position.alternativeTicker.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFFEFF6FF)
+                                ) {
+                                    Text(
+                                        text = "Alt: ${position.alternativeTicker}",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF2563EB)
+                                        ),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
                             }
                         }
 
@@ -2195,26 +2251,53 @@ fun PositionCard(
                             )
                         }
 
-                        OutlinedButton(
-                            onClick = onAddTradeClick,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            border = BorderStroke(1.dp, Color(0xFF2563EB))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Add,
-                                contentDescription = "Pridať nákup",
-                                tint = Color(0xFF2563EB),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Pridať nákup",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF2563EB)
+                            OutlinedButton(
+                                onClick = onEditTickerClick,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                border = BorderStroke(1.dp, Color(0xFF64748B))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Edit,
+                                    contentDescription = "Upraviť ticker",
+                                    tint = Color(0xFF64748B),
+                                    modifier = Modifier.size(14.dp)
                                 )
-                            )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (position.alternativeTicker.isNullOrBlank()) "Ticker" else position.alternativeTicker,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF64748B)
+                                    )
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = onAddTradeClick,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                border = BorderStroke(1.dp, Color(0xFF2563EB))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Add,
+                                    contentDescription = "Pridať nákup",
+                                    tint = Color(0xFF2563EB),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Pridať nákup",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF2563EB)
+                                    )
+                                )
+                            }
                         }
                     }
 
@@ -2791,6 +2874,95 @@ fun AddTradeDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Zrušiť", style = MaterialTheme.typography.labelLarge)
+            }
+        },
+        shape = RoundedCornerShape(24.dp),
+        containerColor = CardBackground
+    )
+}
+
+// --- Edit Alternative Ticker Dialog ---
+
+@Composable
+fun EditTickerDialog(
+    position: Position?,
+    onDismiss: () -> Unit,
+    onSave: (originalSymbol: String, alternativeTicker: String) -> Unit
+) {
+    if (position == null) return
+
+    var tickerInput by remember(position) {
+        mutableStateOf(position.alternativeTicker ?: "")
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Alternatívny ticker pre ${position.symbol}",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = TextPrimary)
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Zadajte alternatívny ticker akcie pre Yahoo Finance (napr. MPW.US alebo MPW). " +
+                            "Tento ticker sa použije na stiahnutie trhových cien, výpočet denného P&L a trhovej hodnoty namiesto pôvodného symbolu z importu (${position.symbol}).",
+                    style = MaterialTheme.typography.bodyMedium.copy(color = TextSecondary)
+                )
+
+                OutlinedTextField(
+                    value = tickerInput,
+                    onValueChange = { tickerInput = it.uppercase() },
+                    label = { Text("Alternatívny ticker") },
+                    placeholder = { Text("napr. MPW.US") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedContainerColor = InputFieldBg,
+                        unfocusedContainerColor = InputFieldBg,
+                        focusedBorderColor = Color(0xFF2563EB),
+                        unfocusedBorderColor = CardBorderColor,
+                        cursorColor = TextPrimary
+                    )
+                )
+
+                if (!position.alternativeTicker.isNullOrBlank()) {
+                    Text(
+                        text = "Aktuálne nastavený alternatívny ticker: ${position.alternativeTicker}",
+                        style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFF2563EB))
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(position.symbol, tickerInput.trim())
+                },
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
+            ) {
+                Text("Uložiť", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!position.alternativeTicker.isNullOrBlank()) {
+                    TextButton(
+                        onClick = {
+                            onSave(position.symbol, "")
+                        }
+                    ) {
+                        Text("Obnoviť pôvodný", color = NegativeRed, style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Zrušiť", style = MaterialTheme.typography.labelLarge)
+                }
             }
         },
         shape = RoundedCornerShape(24.dp),

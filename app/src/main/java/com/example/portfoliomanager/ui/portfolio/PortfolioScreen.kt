@@ -64,6 +64,9 @@ fun PortfolioScreen(
         onOpenAddTradeDialog = viewModel::onOpenAddTradeDialog,
         onDismissAddTradeDialog = viewModel::onDismissAddTradeDialog,
         onAddManualTrade = viewModel::addManualTrade,
+        onOpenEditTickerDialog = viewModel::onOpenEditTickerDialog,
+        onDismissEditTickerDialog = viewModel::onDismissEditTickerDialog,
+        onSaveTickerOverride = viewModel::saveTickerOverride,
         onPositionClick = viewModel::navigateToPosition,
         onPositionScrollHandled = viewModel::onPositionScrollHandled,
         modifier = modifier
@@ -90,6 +93,9 @@ fun PortfolioScreenContent(
     onOpenAddTradeDialog: (com.example.portfoliomanager.data.model.Position) -> Unit = {},
     onDismissAddTradeDialog: () -> Unit = {},
     onAddManualTrade: (positionId: String, quantity: Double, price: Double, date: String, commission: Double) -> Unit = { _, _, _, _, _ -> },
+    onOpenEditTickerDialog: (com.example.portfoliomanager.data.model.Position) -> Unit = {},
+    onDismissEditTickerDialog: () -> Unit = {},
+    onSaveTickerOverride: (originalSymbol: String, alternativeTicker: String) -> Unit = { _, _ -> },
     onPositionClick: (String) -> Unit = {},
     onPositionScrollHandled: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -236,7 +242,8 @@ fun PortfolioScreenContent(
                                             position = position,
                                             isExpanded = isExpanded,
                                             onToggleExpand = { onTogglePositionExpanded(position.id) },
-                                            onAddTradeClick = { onOpenAddTradeDialog(position) }
+                                            onAddTradeClick = { onOpenAddTradeDialog(position) },
+                                            onEditTickerClick = { onOpenEditTickerDialog(position) }
                                         )
                                     }
                                 }
@@ -266,6 +273,13 @@ fun PortfolioScreenContent(
                         onAddManualTrade(pos.id, quantity, price, date, commission)
                     }
                 }
+            )
+
+            // Edit Alternative Ticker Dialog
+            EditTickerDialog(
+                position = uiState.editTickerPosition,
+                onDismiss = onDismissEditTickerDialog,
+                onSave = onSaveTickerOverride
             )
         }
     }

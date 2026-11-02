@@ -276,6 +276,23 @@ class PortfolioViewModelTest {
         assertEquals(com.example.portfoliomanager.data.model.PortfolioTimeRange.ALL, historyData!!.timeRange)
         assertEquals(expectedTotalPnl, historyData.changeAmount, 0.01)
     }
+
+    @Test
+    fun `saveTickerOverride updates alternative ticker on position and state`() {
+        val targetPosition = viewModel.uiState.value.filteredPositions.first()
+        viewModel.onOpenEditTickerDialog(targetPosition)
+        assertEquals(targetPosition, viewModel.uiState.value.editTickerPosition)
+
+        viewModel.saveTickerOverride(targetPosition.symbol, "MPW.US")
+
+        val state = viewModel.uiState.value
+        assertNull(state.editTickerPosition)
+
+        val updatedPosition = state.filteredPositions.find { it.symbol == targetPosition.symbol }
+        assertNotNull(updatedPosition)
+        assertEquals("MPW.US", updatedPosition!!.alternativeTicker)
+        assertEquals("MPW.US", updatedPosition.effectiveTicker)
+    }
 }
 
 private class FakePortfolioRepository(
@@ -335,6 +352,21 @@ private class FakePortfolioRepository(
                 val newQty = pos.quantity + trade.quantity
                 val newTrades = pos.trades + trade
                 pos.copy(quantity = newQty, trades = newTrades)
+            } else pos
+        }
+        mockData = mockData.copy(positions = updatedPositions)
+        return Result.success(mockData)
+    }
+
+    override suspend fun saveTickerOverride(
+        originalSymbol: String,
+        alternativeTicker: String
+    ): Result<PortfolioData> {
+        val upperOriginal = originalSymbol.uppercase()
+        val upperAlt = alternativeTicker.uppercase()
+        val updatedPositions = mockData.positions.map { pos ->
+            if (pos.symbol.uppercase() == upperOriginal) {
+                pos.copy(alternativeTicker = upperAlt.ifBlank { null })
             } else pos
         }
         mockData = mockData.copy(positions = updatedPositions)
