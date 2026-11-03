@@ -400,6 +400,34 @@ class PortfolioViewModel(
     }
 
     /**
+     * Opens dialog to edit an existing trade.
+     */
+    fun onOpenEditTradeDialog(position: Position, trade: com.example.portfoliomanager.data.model.Trade) {
+        _uiState.update { it.copy(editTradePosition = position, editTrade = trade) }
+    }
+
+    /**
+     * Dismisses the edit trade dialog.
+     */
+    fun onDismissEditTradeDialog() {
+        _uiState.update { it.copy(editTradePosition = null, editTrade = null) }
+    }
+
+    /**
+     * Opens dialog to confirm deleting a trade.
+     */
+    fun onOpenDeleteTradeDialog(position: Position, trade: com.example.portfoliomanager.data.model.Trade) {
+        _uiState.update { it.copy(deleteTradePosition = position, deleteTrade = trade) }
+    }
+
+    /**
+     * Dismisses the delete trade dialog.
+     */
+    fun onDismissDeleteTradeDialog() {
+        _uiState.update { it.copy(deleteTradePosition = null, deleteTrade = null) }
+    }
+
+    /**
      * Opens dialog to edit alternative ticker for a position.
      */
     fun onOpenEditTickerDialog(position: Position) {
@@ -478,6 +506,76 @@ class PortfolioViewModel(
                     _uiState.update { state ->
                         state.copy(
                             errorMessage = throwable.message ?: "Chyba pri pridávaní nákupu."
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    /**
+     * Edits an existing trade, recalculates portfolio metrics and persists it.
+     */
+    fun editTrade(
+        tradeId: String,
+        quantity: Double,
+        price: Double,
+        date: String,
+        commission: Double = 0.0,
+        buySell: String = "BUY"
+    ) {
+        val position = _uiState.value.editTradePosition ?: return
+        val existingTrade = _uiState.value.editTrade ?: return
+
+        val normalizedBuySell = buySell.uppercase()
+        val totalAmount = if (normalizedBuySell == "BUY") (quantity * price) + commission else (quantity * price) - commission
+        val updatedTrade = existingTrade.copy(
+            symbol = position.symbol,
+            date = date.ifBlank { existingTrade.date },
+            buySell = normalizedBuySell,
+            quantity = quantity,
+            price = price,
+            commission = commission,
+            totalAmount = maxOf(0.0, totalAmount)
+        )
+
+        viewModelScope.launch {
+            val result = repository.editTrade(updatedTrade)
+            result.fold(
+                onSuccess = { updatedPortfolioData ->
+                    _uiState.update { state ->
+                        state.copy(editTradePosition = null, editTrade = null)
+                    }
+                    updatePortfolioDataState(updatedPortfolioData)
+                },
+                onFailure = { throwable ->
+                    _uiState.update { state ->
+                        state.copy(
+                            errorMessage = throwable.message ?: "Chyba pri úprave transakcie."
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    /**
+     * Deletes a trade by ID, recalculates portfolio metrics and persists it.
+     */
+    fun deleteTrade(tradeId: String) {
+        viewModelScope.launch {
+            val result = repository.deleteTrade(tradeId)
+            result.fold(
+                onSuccess = { updatedPortfolioData ->
+                    _uiState.update { state ->
+                        state.copy(deleteTradePosition = null, deleteTrade = null)
+                    }
+                    updatePortfolioDataState(updatedPortfolioData)
+                },
+                onFailure = { throwable ->
+                    _uiState.update { state ->
+                        state.copy(
+                            errorMessage = throwable.message ?: "Chyba pri odstraňovaní transakcie."
                         )
                     }
                 }

@@ -5,6 +5,7 @@ import com.example.portfoliomanager.data.model.PortfolioHistoryData
 import com.example.portfoliomanager.data.model.PortfolioTimeRange
 import com.example.portfoliomanager.data.model.Position
 import com.example.portfoliomanager.data.model.SectorAllocation
+import com.example.portfoliomanager.data.model.Trade
 
 enum class CategoryFilter(val displayName: String) {
     ALL("Všetky"),
@@ -72,6 +73,10 @@ data class PortfolioUiState(
     val importSuccessMessage: String? = null,
     val errorMessage: String? = null,
     val addTradePosition: Position? = null,
+    val editTradePosition: Position? = null,
+    val editTrade: Trade? = null,
+    val deleteTradePosition: Position? = null,
+    val deleteTrade: Trade? = null,
     val editTickerPosition: Position? = null,
     val selectedPositionIdForScroll: String? = null
 )

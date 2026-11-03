@@ -298,6 +298,52 @@ class PortfolioViewModelTest {
         assertEquals("MPW.US", updatedPosition!!.alternativeTicker)
         assertEquals("MPW.US", updatedPosition.effectiveTicker)
     }
+
+    @Test
+    fun `editTrade updates trade details and refreshes portfolio state`() {
+        val targetPosition = viewModel.uiState.value.filteredPositions.first()
+        viewModel.addManualTrade(targetPosition.id, 10.0, 150.0, "2024-01-01")
+        val posWithTrade = viewModel.uiState.value.filteredPositions.find { it.id == targetPosition.id }!!
+        val addedTrade = posWithTrade.trades.first()
+
+        viewModel.onOpenEditTradeDialog(posWithTrade, addedTrade)
+        assertEquals(posWithTrade, viewModel.uiState.value.editTradePosition)
+        assertEquals(addedTrade, viewModel.uiState.value.editTrade)
+
+        viewModel.editTrade(addedTrade.id, 20.0, 160.0, "2024-01-02", 2.0, "BUY")
+
+        val state = viewModel.uiState.value
+        assertNull(state.editTradePosition)
+        assertNull(state.editTrade)
+
+        val updatedPos = state.filteredPositions.find { it.id == targetPosition.id }!!
+        val editedTrade = updatedPos.trades.find { it.id == addedTrade.id }
+        assertNotNull(editedTrade)
+        assertEquals(20.0, editedTrade!!.quantity, 0.01)
+        assertEquals(160.0, editedTrade.price, 0.01)
+        assertEquals("2024-01-02", editedTrade.date)
+    }
+
+    @Test
+    fun `deleteTrade removes trade and refreshes portfolio state`() {
+        val targetPosition = viewModel.uiState.value.filteredPositions.first()
+        viewModel.addManualTrade(targetPosition.id, 10.0, 150.0, "2024-01-01")
+        val posWithTrade = viewModel.uiState.value.filteredPositions.find { it.id == targetPosition.id }!!
+        val addedTrade = posWithTrade.trades.first()
+
+        viewModel.onOpenDeleteTradeDialog(posWithTrade, addedTrade)
+        assertEquals(posWithTrade, viewModel.uiState.value.deleteTradePosition)
+        assertEquals(addedTrade, viewModel.uiState.value.deleteTrade)
+
+        viewModel.deleteTrade(addedTrade.id)
+
+        val state = viewModel.uiState.value
+        assertNull(state.deleteTradePosition)
+        assertNull(state.deleteTrade)
+
+        val updatedPos = state.filteredPositions.find { it.id == targetPosition.id }!!
+        assertTrue(updatedPos.trades.none { it.id == addedTrade.id })
+    }
 }
 
 private class FakePortfolioRepository(
@@ -357,6 +403,30 @@ private class FakePortfolioRepository(
                 val newQty = pos.quantity + trade.quantity
                 val newTrades = pos.trades + trade
                 pos.copy(quantity = newQty, trades = newTrades)
+            } else pos
+        }
+        mockData = mockData.copy(positions = updatedPositions)
+        return Result.success(mockData)
+    }
+
+    override suspend fun editTrade(
+        trade: com.example.portfoliomanager.data.model.Trade
+    ): Result<PortfolioData> {
+        val updatedPositions = mockData.positions.map { pos ->
+            if (pos.trades.any { it.id == trade.id }) {
+                val newTrades = pos.trades.map { if (it.id == trade.id) trade else it }
+                pos.copy(trades = newTrades)
+            } else pos
+        }
+        mockData = mockData.copy(positions = updatedPositions)
+        return Result.success(mockData)
+    }
+
+    override suspend fun deleteTrade(tradeId: String): Result<PortfolioData> {
+        val updatedPositions = mockData.positions.map { pos ->
+            if (pos.trades.any { it.id == tradeId }) {
+                val newTrades = pos.trades.filterNot { it.id == tradeId }
+                pos.copy(trades = newTrades)
             } else pos
         }
         mockData = mockData.copy(positions = updatedPositions)

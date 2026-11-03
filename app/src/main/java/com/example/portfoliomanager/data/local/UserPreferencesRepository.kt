@@ -24,6 +24,7 @@ open class UserPreferencesRepository(private val context: Context? = null) {
         private val IBKR_QUERY_ID_KEY = stringPreferencesKey("ibkr_query_id")
         private val IMPORTED_CSV_KEY = stringPreferencesKey("imported_csv_content")
         private val MANUAL_TRADES_KEY = stringPreferencesKey("manual_trades_json")
+        private val DELETED_TRADES_KEY = stringPreferencesKey("deleted_trades_json")
         private val TICKER_OVERRIDES_KEY = stringPreferencesKey("ticker_overrides_json")
 
         @Volatile
@@ -49,6 +50,10 @@ open class UserPreferencesRepository(private val context: Context? = null) {
 
     open val manualTradesFlow: Flow<String?> = context?.dataStore?.data?.map { preferences ->
         preferences[MANUAL_TRADES_KEY]?.ifBlank { null }
+    } ?: flowOf(null)
+
+    open val deletedTradesFlow: Flow<String?> = context?.dataStore?.data?.map { preferences ->
+        preferences[DELETED_TRADES_KEY]?.ifBlank { null }
     } ?: flowOf(null)
 
     open val tickerOverridesFlow: Flow<Map<String, String>> = context?.dataStore?.data?.map { preferences ->
@@ -90,6 +95,18 @@ open class UserPreferencesRepository(private val context: Context? = null) {
     open suspend fun clearManualTrades() {
         context?.dataStore?.edit { preferences ->
             preferences.remove(MANUAL_TRADES_KEY)
+        }
+    }
+
+    open suspend fun saveDeletedTrades(json: String) {
+        context?.dataStore?.edit { preferences ->
+            preferences[DELETED_TRADES_KEY] = json
+        }
+    }
+
+    open suspend fun clearDeletedTrades() {
+        context?.dataStore?.edit { preferences ->
+            preferences.remove(DELETED_TRADES_KEY)
         }
     }
 

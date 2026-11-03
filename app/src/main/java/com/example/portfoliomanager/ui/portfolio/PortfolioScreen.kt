@@ -64,6 +64,12 @@ fun PortfolioScreen(
         onOpenAddTradeDialog = viewModel::onOpenAddTradeDialog,
         onDismissAddTradeDialog = viewModel::onDismissAddTradeDialog,
         onAddManualTrade = viewModel::addManualTrade,
+        onOpenEditTradeDialog = viewModel::onOpenEditTradeDialog,
+        onDismissEditTradeDialog = viewModel::onDismissEditTradeDialog,
+        onEditTrade = viewModel::editTrade,
+        onOpenDeleteTradeDialog = viewModel::onOpenDeleteTradeDialog,
+        onDismissDeleteTradeDialog = viewModel::onDismissDeleteTradeDialog,
+        onDeleteTrade = viewModel::deleteTrade,
         onOpenEditTickerDialog = viewModel::onOpenEditTickerDialog,
         onDismissEditTickerDialog = viewModel::onDismissEditTickerDialog,
         onSaveTickerOverride = viewModel::saveTickerOverride,
@@ -93,6 +99,12 @@ fun PortfolioScreenContent(
     onOpenAddTradeDialog: (com.example.portfoliomanager.data.model.Position) -> Unit = {},
     onDismissAddTradeDialog: () -> Unit = {},
     onAddManualTrade: (positionId: String, quantity: Double, price: Double, date: String, commission: Double) -> Unit = { _, _, _, _, _ -> },
+    onOpenEditTradeDialog: (com.example.portfoliomanager.data.model.Position, com.example.portfoliomanager.data.model.Trade) -> Unit = { _, _ -> },
+    onDismissEditTradeDialog: () -> Unit = {},
+    onEditTrade: (tradeId: String, quantity: Double, price: Double, date: String, commission: Double, buySell: String) -> Unit = { _, _, _, _, _, _ -> },
+    onOpenDeleteTradeDialog: (com.example.portfoliomanager.data.model.Position, com.example.portfoliomanager.data.model.Trade) -> Unit = { _, _ -> },
+    onDismissDeleteTradeDialog: () -> Unit = {},
+    onDeleteTrade: (tradeId: String) -> Unit = {},
     onOpenEditTickerDialog: (com.example.portfoliomanager.data.model.Position) -> Unit = {},
     onDismissEditTickerDialog: () -> Unit = {},
     onSaveTickerOverride: (originalSymbol: String, alternativeTicker: String) -> Unit = { _, _ -> },
@@ -243,7 +255,9 @@ fun PortfolioScreenContent(
                                             isExpanded = isExpanded,
                                             onToggleExpand = { onTogglePositionExpanded(position.id) },
                                             onAddTradeClick = { onOpenAddTradeDialog(position) },
-                                            onEditTickerClick = { onOpenEditTickerDialog(position) }
+                                            onEditTickerClick = { onOpenEditTickerDialog(position) },
+                                            onEditTradeClick = { trade -> onOpenEditTradeDialog(position, trade) },
+                                            onDeleteTradeClick = { trade -> onOpenDeleteTradeDialog(position, trade) }
                                         )
                                     }
                                 }
@@ -271,6 +285,30 @@ fun PortfolioScreenContent(
                 onSaveTrade = { quantity, price, date, commission ->
                     uiState.addTradePosition?.let { pos ->
                         onAddManualTrade(pos.id, quantity, price, date, commission)
+                    }
+                }
+            )
+
+            // Edit Trade Dialog
+            EditTradeDialog(
+                position = uiState.editTradePosition,
+                trade = uiState.editTrade,
+                onDismiss = onDismissEditTradeDialog,
+                onSaveTrade = { quantity, price, date, commission, buySell ->
+                    uiState.editTrade?.let { trade ->
+                        onEditTrade(trade.id, quantity, price, date, commission, buySell)
+                    }
+                }
+            )
+
+            // Delete Trade Confirmation Dialog
+            DeleteTradeDialog(
+                position = uiState.deleteTradePosition,
+                trade = uiState.deleteTrade,
+                onDismiss = onDismissDeleteTradeDialog,
+                onConfirmDelete = {
+                    uiState.deleteTrade?.let { trade ->
+                        onDeleteTrade(trade.id)
                     }
                 }
             )

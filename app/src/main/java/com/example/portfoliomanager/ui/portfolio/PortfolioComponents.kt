@@ -1,5 +1,6 @@
 package com.example.portfoliomanager.ui.portfolio
 
+import com.example.portfoliomanager.data.model.Trade
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -37,7 +38,9 @@ import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material3.FilterChip
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.FilterList
@@ -1964,6 +1967,8 @@ fun YourAssetsSection(
     onTogglePositionExpanded: (String) -> Unit,
     onAddTradeClick: (Position) -> Unit = {},
     onEditTickerClick: (Position) -> Unit = {},
+    onEditTradeClick: (Position, Trade) -> Unit = { _, _ -> },
+    onDeleteTradeClick: (Position, Trade) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -1989,7 +1994,9 @@ fun YourAssetsSection(
                     isExpanded = isExpanded,
                     onToggleExpand = { onTogglePositionExpanded(position.id) },
                     onAddTradeClick = { onAddTradeClick(position) },
-                    onEditTickerClick = { onEditTickerClick(position) }
+                    onEditTickerClick = { onEditTickerClick(position) },
+                    onEditTradeClick = { trade -> onEditTradeClick(position, trade) },
+                    onDeleteTradeClick = { trade -> onDeleteTradeClick(position, trade) }
                 )
             }
         }
@@ -2005,6 +2012,8 @@ fun PositionCard(
     onToggleExpand: () -> Unit,
     onAddTradeClick: () -> Unit = {},
     onEditTickerClick: () -> Unit = {},
+    onEditTradeClick: (Trade) -> Unit = {},
+    onDeleteTradeClick: (Trade) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isPositive = position.dailyPnl >= 0
@@ -2373,13 +2382,42 @@ fun PositionCard(
                                                 )
                                             }
 
-                                            Text(
-                                                text = trade.totalAmount.toCurrencyString(tradeCurr),
-                                                style = MaterialTheme.typography.titleSmall.copy(
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = TextPrimary
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = trade.totalAmount.toCurrencyString(tradeCurr),
+                                                    style = MaterialTheme.typography.titleSmall.copy(
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = TextPrimary
+                                                    )
                                                 )
-                                            )
+
+                                                IconButton(
+                                                    onClick = { onEditTradeClick(trade) },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Edit,
+                                                        contentDescription = "Upraviť transakciu",
+                                                        tint = Color(0xFF64748B),
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+
+                                                IconButton(
+                                                    onClick = { onDeleteTradeClick(trade) },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Delete,
+                                                        contentDescription = "Odstrániť transakciu",
+                                                        tint = Color(0xFFEF4444),
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -3025,3 +3063,306 @@ fun EditTickerDialog(
         containerColor = CardBackground
     )
 }
+
+// --- Edit Trade Dialog ---
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditTradeDialog(
+    position: Position?,
+    trade: Trade?,
+    onDismiss: () -> Unit,
+    onSaveTrade: (quantity: Double, price: Double, date: String, commission: Double, buySell: String) -> Unit
+) {
+    if (position == null || trade == null) return
+
+    var buySellState by remember(trade) { mutableStateOf(trade.buySell.uppercase()) }
+    var quantityInput by remember(trade) { mutableStateOf(String.format(Locale.US, "%.2f", trade.quantity).replace(',', '.')) }
+    var priceInput by remember(trade) { mutableStateOf(String.format(Locale.US, "%.2f", trade.price).replace(',', '.')) }
+    var dateInput by remember(trade) { mutableStateOf(trade.date) }
+    var commissionInput by remember(trade) { mutableStateOf(String.format(Locale.US, "%.2f", trade.commission).replace(',', '.')) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = remember(dateInput) {
+                try {
+                    java.time.LocalDate.parse(dateInput, java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+                        .atStartOfDay(java.time.ZoneOffset.UTC)
+                        .toInstant()
+                        .toEpochMilli()
+                } catch (_: Exception) {
+                    System.currentTimeMillis()
+                }
+            }
+        )
+
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            val selectedDate = java.time.Instant.ofEpochMilli(millis)
+                                .atZone(java.time.ZoneOffset.UTC)
+                                .toLocalDate()
+                            dateInput = selectedDate.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+                            errorMessage = null
+                        }
+                        showDatePicker = false
+                    }
+                ) {
+                    Text("OK", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("Zrušiť", style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text(
+                    text = "Upraviť transakciu",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                )
+                Text(
+                    text = "${position.symbol} - ${position.description}",
+                    style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary)
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (errorMessage != null) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFFEE2E2),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = errorMessage!!,
+                            style = MaterialTheme.typography.bodySmall.copy(color = Color(0xFF991B1B)),
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = buySellState == "BUY",
+                        onClick = { buySellState = "BUY" },
+                        label = { Text("NÁKUP", fontWeight = FontWeight.Bold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = PositiveGreenBg,
+                            selectedLabelColor = PositiveGreen
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilterChip(
+                        selected = buySellState == "SELL",
+                        onClick = { buySellState = "SELL" },
+                        label = { Text("PREDAJ", fontWeight = FontWeight.Bold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = NegativeRedBg,
+                            selectedLabelColor = NegativeRed
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                OutlinedTextField(
+                    value = quantityInput,
+                    onValueChange = {
+                        quantityInput = it
+                        errorMessage = null
+                    },
+                    label = { Text("Množstvo / Počet kusov") },
+                    placeholder = { Text("napr. 10.0") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedContainerColor = InputFieldBg,
+                        unfocusedContainerColor = InputFieldBg,
+                        focusedBorderColor = ActiveLimePill,
+                        unfocusedBorderColor = CardBorderColor,
+                        cursorColor = TextPrimary
+                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = priceInput,
+                    onValueChange = {
+                        priceInput = it
+                        errorMessage = null
+                    },
+                    label = { Text("Cena za kus (${position.currency})") },
+                    placeholder = { Text("napr. 150.00") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedContainerColor = InputFieldBg,
+                        unfocusedContainerColor = InputFieldBg,
+                        focusedBorderColor = ActiveLimePill,
+                        unfocusedBorderColor = CardBorderColor,
+                        cursorColor = TextPrimary
+                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = dateInput,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Dátum transakcie") },
+                        placeholder = { Text("YYYY-MM-DD") },
+                        singleLine = true,
+                        trailingIcon = {
+                            IconButton(onClick = { showDatePicker = true }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.DateRange,
+                                    contentDescription = "Vybrať dátum z kalendára",
+                                    tint = TextPrimary
+                                )
+                            }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedContainerColor = InputFieldBg,
+                            unfocusedContainerColor = InputFieldBg,
+                            focusedBorderColor = ActiveLimePill,
+                            unfocusedBorderColor = CardBorderColor,
+                            cursorColor = TextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable { showDatePicker = true }
+                    )
+                }
+
+                OutlinedTextField(
+                    value = commissionInput,
+                    onValueChange = {
+                        commissionInput = it
+                        errorMessage = null
+                    },
+                    label = { Text("Poplatok (voliteľné)") },
+                    placeholder = { Text("0.0") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedContainerColor = InputFieldBg,
+                        unfocusedContainerColor = InputFieldBg,
+                        focusedBorderColor = ActiveLimePill,
+                        unfocusedBorderColor = CardBorderColor,
+                        cursorColor = TextPrimary
+                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val qty = quantityInput.replace(',', '.').toDoubleOrNull()
+                    val prc = priceInput.replace(',', '.').toDoubleOrNull()
+                    val comm = commissionInput.replace(',', '.').toDoubleOrNull() ?: 0.0
+
+                    if (qty == null || qty <= 0) {
+                        errorMessage = "Zadajte platné množstvo väčšie ako 0."
+                        return@Button
+                    }
+                    if (prc == null || prc < 0) {
+                        errorMessage = "Zadajte platnú cenu."
+                        return@Button
+                    }
+                    if (dateInput.isBlank()) {
+                        errorMessage = "Zadajte dátum transakcie."
+                        return@Button
+                    }
+
+                    onSaveTrade(qty, prc, dateInput.trim(), comm, buySellState)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
+            ) {
+                Text("Uložiť zmeny", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, color = Color.White))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Zrušiť", style = MaterialTheme.typography.labelLarge.copy(color = TextSecondary))
+            }
+        }
+    )
+}
+
+// --- Delete Trade Confirmation Dialog ---
+
+@Composable
+fun DeleteTradeDialog(
+    position: Position?,
+    trade: Trade?,
+    onDismiss: () -> Unit,
+    onConfirmDelete: () -> Unit
+) {
+    if (position == null || trade == null) return
+
+    val tradeTypeLabel = if (trade.buySell.uppercase() == "BUY") "Nákup" else "Predaj"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Odstrániť transakciu?",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+            )
+        },
+        text = {
+            Text(
+                text = "Naozaj chcete odstrániť túto transakciu (${tradeTypeLabel} ${String.format(Locale.US, "%,.2f", trade.quantity)} ks ze dňa ${trade.date}) pre ${position.symbol}?",
+                style = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary)
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirmDelete,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+            ) {
+                Text("Odstrániť", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, color = Color.White))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Zrušiť", style = MaterialTheme.typography.labelLarge.copy(color = TextSecondary))
+            }
+        }
+    )
+}
+

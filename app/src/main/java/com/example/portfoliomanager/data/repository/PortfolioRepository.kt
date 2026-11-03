@@ -76,6 +76,16 @@ interface PortfolioRepository {
     suspend fun addManualTrade(positionId: String, trade: Trade): Result<PortfolioData>
 
     /**
+     * Edits/updates an existing trade and persists changes.
+     */
+    suspend fun editTrade(trade: Trade): Result<PortfolioData>
+
+    /**
+     * Deletes a trade by ID and persists changes.
+     */
+    suspend fun deleteTrade(tradeId: String): Result<PortfolioData>
+
+    /**
      * Saves or removes an alternative ticker for a position symbol and refreshes portfolio data.
      */
     suspend fun saveTickerOverride(originalSymbol: String, alternativeTicker: String): Result<PortfolioData>
@@ -468,9 +478,14 @@ class PortfolioRepositoryImpl(
             val newJson = serializeTrades(updatedTrades)
             preferencesRepository?.saveManualTrades(newJson)
 
-            val baseData = cachedPortfolioData ?: getPortfolioData(forceRefresh = false).getOrNull()
-                ?: MockPortfolioData.getSamplePortfolio()
+            val deletedJson = preferencesRepository?.deletedTradesFlow?.first() ?: ""
+            val deletedIds = deserializeDeletedTradeIds(deletedJson)
+            if (trade.id in deletedIds) {
+                val newDeletedJson = serializeDeletedTradeIds(deletedIds - trade.id)
+                preferencesRepository?.saveDeletedTrades(newDeletedJson)
+            }
 
+            val baseData = fetchRawBaseData()
             val enrichedData = applySavedManualTrades(baseData)
             cachedPortfolioData = enrichedData
             Result.success(enrichedData)
@@ -480,39 +495,151 @@ class PortfolioRepositoryImpl(
         }
     }
 
+    override suspend fun editTrade(
+        trade: Trade
+    ): Result<PortfolioData> {
+        return try {
+            val savedJson = preferencesRepository?.manualTradesFlow?.first() ?: ""
+            val existingTrades = deserializeTrades(savedJson).toMutableList()
+            val index = existingTrades.indexOfFirst { it.id == trade.id }
+            if (index >= 0) {
+                existingTrades[index] = trade
+            } else {
+                existingTrades.add(trade)
+            }
+            val newJson = serializeTrades(existingTrades)
+            preferencesRepository?.saveManualTrades(newJson)
+
+            val deletedJson = preferencesRepository?.deletedTradesFlow?.first() ?: ""
+            val deletedIds = deserializeDeletedTradeIds(deletedJson)
+            if (trade.id in deletedIds) {
+                val newDeletedJson = serializeDeletedTradeIds(deletedIds - trade.id)
+                preferencesRepository?.saveDeletedTrades(newDeletedJson)
+            }
+
+            val baseData = fetchRawBaseData()
+            val enrichedData = applySavedManualTrades(baseData)
+            cachedPortfolioData = enrichedData
+            Result.success(enrichedData)
+        } catch (e: Exception) {
+            AppLogger.e("PortfolioRepository", "Failed to edit trade: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun deleteTrade(
+        tradeId: String
+    ): Result<PortfolioData> {
+        return try {
+            val savedJson = preferencesRepository?.manualTradesFlow?.first() ?: ""
+            val existingTrades = deserializeTrades(savedJson).filterNot { it.id == tradeId }
+            val newJson = serializeTrades(existingTrades)
+            preferencesRepository?.saveManualTrades(newJson)
+
+            val deletedJson = preferencesRepository?.deletedTradesFlow?.first() ?: ""
+            val deletedIds = deserializeDeletedTradeIds(deletedJson) + tradeId
+            val newDeletedJson = serializeDeletedTradeIds(deletedIds)
+            preferencesRepository?.saveDeletedTrades(newDeletedJson)
+
+            val baseData = fetchRawBaseData()
+            val enrichedData = applySavedManualTrades(baseData)
+            cachedPortfolioData = enrichedData
+            Result.success(enrichedData)
+        } catch (e: Exception) {
+            AppLogger.e("PortfolioRepository", "Failed to delete trade: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun fetchRawBaseData(): PortfolioData {
+        val savedCsv = preferencesRepository?.importedCsvFlow?.first()
+        val rawData = if (!savedCsv.isNullOrBlank()) {
+            parseSavedImportedFiles(savedCsv).getOrElse { fetchFromApiOrMock(null, null).getOrElse { MockPortfolioData.getSamplePortfolio() } }
+        } else {
+            fetchFromApiOrMock(null, null).getOrElse { MockPortfolioData.getSamplePortfolio() }
+        }
+        val dataWithOverrides = applySavedTickerOverrides(rawData)
+        return if (rawData.isMockData) {
+            dataWithOverrides
+        } else {
+            try {
+                marketDataRepository.enrichPortfolioWithLivePrices(dataWithOverrides)
+            } catch (e: Exception) {
+                dataWithOverrides
+            }
+        }
+    }
+
     private suspend fun applySavedManualTrades(data: PortfolioData, extraTrades: List<Trade> = emptyList()): PortfolioData {
         val savedJson = preferencesRepository?.manualTradesFlow?.first() ?: ""
+        val deletedJson = preferencesRepository?.deletedTradesFlow?.first() ?: ""
         val savedTrades = (deserializeTrades(savedJson) + extraTrades).distinctBy { it.id }
-        if (savedTrades.isEmpty()) return data
+        val deletedTradeIds = deserializeDeletedTradeIds(deletedJson)
+
+        if (savedTrades.isEmpty() && deletedTradeIds.isEmpty()) return data
 
         val tradesBySymbol = savedTrades.groupBy { it.symbol.trim().uppercase() }
 
         val updatedPositions = data.positions.map { pos ->
             val posSymbol = pos.symbol.trim().uppercase()
-            val posTrades = tradesBySymbol[posSymbol] ?: emptyList()
-            val newTrades = posTrades.filter { t -> pos.trades.none { existing -> existing.id == t.id } }.distinctBy { it.id }
-            if (newTrades.isEmpty()) {
+            val savedPosTrades = tradesBySymbol[posSymbol] ?: emptyList()
+
+            val activeBaseTrades = pos.trades.filterNot { it.id in deletedTradeIds }
+
+            val finalTrades = activeBaseTrades.map { baseTrade ->
+                savedPosTrades.find { it.id == baseTrade.id } ?: baseTrade
+            }.toMutableList()
+
+            savedPosTrades.forEach { savedTrade ->
+                if (savedTrade.id !in deletedTradeIds && finalTrades.none { it.id == savedTrade.id }) {
+                    finalTrades.add(savedTrade)
+                }
+            }
+
+            if (finalTrades == pos.trades) {
                 pos
             } else {
-                val addedQty = newTrades.sumOf { it.quantity }
-                val addedCost = newTrades.sumOf { (it.quantity * it.price) + it.commission }
-                val newQty = pos.quantity + addedQty
-                val oldCost = pos.quantity * pos.costBasisPrice
-                val newTotalCost = oldCost + addedCost
-                val newCostBasisPrice = if (newQty > 0) newTotalCost / newQty else pos.costBasisPrice
-                val newMarketValue = newQty * pos.markPrice
-                val newTotalPnl = newMarketValue - newTotalCost
-                val newPnlPct = if (newTotalCost > 0) (newTotalPnl / newTotalCost) * 100.0 else 0.0
-                val allTrades = pos.trades + newTrades
+                if (pos.trades.isNotEmpty()) {
+                    val buyTrades = finalTrades.filter { it.buySell.uppercase() == "BUY" }
+                    val sellTrades = finalTrades.filter { it.buySell.uppercase() == "SELL" }
+                    val newQty = maxOf(0.0, buyTrades.sumOf { it.quantity } - sellTrades.sumOf { it.quantity })
+                    val buyCost = buyTrades.sumOf { (it.quantity * it.price) + it.commission }
+                    val totalBuyQty = buyTrades.sumOf { it.quantity }
+                    val newCostBasisPrice = if (totalBuyQty > 0) buyCost / totalBuyQty else pos.costBasisPrice
+                    val newMarketValue = newQty * pos.markPrice
+                    val newTotalPnl = newMarketValue - (newQty * newCostBasisPrice)
+                    val newPnlPct = if (newQty * newCostBasisPrice > 0) (newTotalPnl / (newQty * newCostBasisPrice)) * 100.0 else 0.0
 
-                pos.copy(
-                    quantity = newQty,
-                    costBasisPrice = newCostBasisPrice,
-                    marketValue = newMarketValue,
-                    totalPnl = newTotalPnl,
-                    pnlPercentage = newPnlPct,
-                    trades = allTrades
-                )
+                    pos.copy(
+                        quantity = newQty,
+                        costBasisPrice = newCostBasisPrice,
+                        marketValue = newMarketValue,
+                        totalPnl = newTotalPnl,
+                        pnlPercentage = newPnlPct,
+                        trades = finalTrades
+                    )
+                } else {
+                    val buyTrades = finalTrades.filter { it.buySell.uppercase() == "BUY" }
+                    val sellTrades = finalTrades.filter { it.buySell.uppercase() == "SELL" }
+                    val addedQty = buyTrades.sumOf { it.quantity } - sellTrades.sumOf { it.quantity }
+                    val addedCost = buyTrades.sumOf { (it.quantity * it.price) + it.commission } - sellTrades.sumOf { (it.quantity * it.price) - it.commission }
+                    val newQty = maxOf(0.0, pos.quantity + addedQty)
+                    val oldCost = pos.quantity * pos.costBasisPrice
+                    val newTotalCost = maxOf(0.0, oldCost + addedCost)
+                    val newCostBasisPrice = if (newQty > 0) newTotalCost / newQty else pos.costBasisPrice
+                    val newMarketValue = newQty * pos.markPrice
+                    val newTotalPnl = newMarketValue - newTotalCost
+                    val newPnlPct = if (newTotalCost > 0) (newTotalPnl / newTotalCost) * 100.0 else 0.0
+
+                    pos.copy(
+                        quantity = newQty,
+                        costBasisPrice = newCostBasisPrice,
+                        marketValue = newMarketValue,
+                        totalPnl = newTotalPnl,
+                        pnlPercentage = newPnlPct,
+                        trades = finalTrades
+                    )
+                }
             }
         }
 
@@ -581,5 +708,25 @@ class PortfolioRepositoryImpl(
             AppLogger.e("PortfolioRepository", "Failed to deserialize trades JSON: ${e.message}", e)
         }
         return list
+    }
+
+    private fun serializeDeletedTradeIds(ids: Set<String>): String {
+        val jsonArray = JSONArray()
+        ids.forEach { jsonArray.put(it) }
+        return jsonArray.toString()
+    }
+
+    private fun deserializeDeletedTradeIds(jsonString: String): Set<String> {
+        if (jsonString.isBlank()) return emptySet()
+        val set = mutableSetOf<String>()
+        try {
+            val jsonArray = JSONArray(jsonString)
+            for (i in 0 until jsonArray.length()) {
+                set.add(jsonArray.getString(i))
+            }
+        } catch (e: Exception) {
+            AppLogger.e("PortfolioRepository", "Failed to deserialize deleted trades JSON: ${e.message}", e)
+        }
+        return set
     }
 }

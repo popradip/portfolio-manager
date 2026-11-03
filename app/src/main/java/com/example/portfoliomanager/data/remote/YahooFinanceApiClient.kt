@@ -157,6 +157,27 @@ open class YahooFinanceApiClient(
         }
     }
 
+    private fun getGermanYahooTicker(base: String): String? {
+        return when (base.uppercase()) {
+            "AMZN" -> "AMZ.DE"
+            "MSFT" -> "MSF.DE"
+            "AAPL" -> "APC.DE"
+            "TSLA" -> "TL0.DE"
+            "GOOGL", "GOOG" -> "ABEA.DE"
+            "META" -> "FB.DE"
+            "NFLX" -> "NFC.DE"
+            "INTC" -> "INL.DE"
+            "PYPL" -> "2PP.DE"
+            "DIS" -> "WD2.DE"
+            "BA" -> "BCO.DE"
+            "NVDA", "NVD" -> "NVD.DE"
+            "MCD" -> "MDO.DE"
+            "BRKB", "BRK.B" -> "381.DE"
+            "AMD" -> "AMD.DE"
+            else -> null
+        }
+    }
+
     private fun getCandidateYahooSymbols(symbol: String): List<String> {
         val upper = symbol.trim().uppercase()
 
@@ -197,8 +218,9 @@ open class YahooFinanceApiClient(
                     }
                     upper.endsWith(".DE") -> {
                         val base = upper.removeSuffix(".DE")
+                        val germanTicker = getGermanYahooTicker(base)
                         val usMapped = if (base == "NVD") "NVDA" else base
-                        listOf(upper, usMapped, base)
+                        listOfNotNull(upper, germanTicker, usMapped, base).distinct()
                     }
                     !upper.contains(".") -> {
                         listOf(upper, "$upper.DE", "$upper.L")

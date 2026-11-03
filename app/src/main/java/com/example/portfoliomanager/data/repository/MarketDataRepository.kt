@@ -41,15 +41,27 @@ class MarketDataRepositoryImpl(
 
             AppLogger.d("MarketDataRepository", "Received live market data for ${marketDataMap.size} of ${distinctTickers.size} tickers.")
 
-            // 2. Resolve currencies for positions (update from Yahoo metadata if available)
+            // 2. Resolve currencies for positions (preserve inferred or explicitly set currencies)
             val updatedPositionCurrencies = portfolioData.positions.map { pos ->
                 val marketData = marketDataMap[pos.effectiveTicker]
-                val detectedCurrency = marketData?.currency?.ifBlank { null } ?: pos.currency.ifBlank { "USD" }
+                val inferredCurrency = inferCurrencyFromSymbol(pos.symbol) ?: inferCurrencyFromSymbol(pos.effectiveTicker)
+                val detectedCurrency: String = if (inferredCurrency != null) {
+                    inferredCurrency
+                } else if (!pos.currency.isBlank() && !pos.currency.equals("USD", ignoreCase = true)) {
+                    pos.currency
+                } else if (marketData != null && marketData.currency.isNotBlank()) {
+                    marketData.currency
+                } else {
+                    pos.currency.ifBlank { "USD" }
+                }
                 pos.copy(currency = detectedCurrency.uppercase())
             }
 
-            // 3. Identify all distinct position currencies and fetch FX exchange rates to target currency (e.g. EUR)
-            val distinctCurrencies = updatedPositionCurrencies.map { it.currency }.distinct()
+            // 3. Identify all distinct position & market data currencies and fetch FX exchange rates to target currency (e.g. EUR)
+            val positionCurrencies = updatedPositionCurrencies.map { it.currency }
+            val marketDataCurrencies = updatedPositionCurrencies.mapNotNull { pos -> marketDataMap[pos.effectiveTicker]?.currency }
+            val distinctCurrencies = (positionCurrencies + marketDataCurrencies + targetCurrency).distinct()
+
             val fxRatesDeferreds = distinctCurrencies.map { curr ->
                 async {
                     val rate = if (curr == targetCurrency) 1.0 else {
@@ -68,7 +80,15 @@ class MarketDataRepositoryImpl(
                 val fxRate = fxRatesMap[pos.currency] ?: 1.0
 
                 if (marketData != null) {
-                    val liveMarkPriceNative = marketData.currentPrice
+                    val marketDataCurrency = marketData.currency.ifBlank { pos.currency }.uppercase()
+                    val priceFxToPosCurrency = if (marketDataCurrency == pos.currency) {
+                        1.0
+                    } else {
+                        val rateMarketToTarget = fxRatesMap[marketDataCurrency] ?: 1.0
+                        if (fxRate > 0.0) rateMarketToTarget / fxRate else 1.0
+                    }
+
+                    val liveMarkPriceNative = marketData.currentPrice * priceFxToPosCurrency
                     val costBasisPriceNative = pos.costBasisPrice
 
                     val updatedMarketValueInTarget = pos.quantity * liveMarkPriceNative * fxRate
@@ -78,7 +98,7 @@ class MarketDataRepositoryImpl(
                         (updatedTotalPnlInTarget / updatedCostBasisTotalInTarget) * 100.0
                     } else pos.pnlPercentage
 
-                    val updatedDailyPnlInTarget = marketData.dailyChange * pos.quantity * fxRate
+                    val updatedDailyPnlInTarget = marketData.dailyChange * priceFxToPosCurrency * pos.quantity * fxRate
 
                     pos.copy(
                         markPrice = liveMarkPriceNative,
@@ -172,6 +192,20 @@ class MarketDataRepositoryImpl(
             "HUF" -> 0.0025
             "JPY" -> 0.0062
             else -> 1.0
+        }
+    }
+
+    private fun inferCurrencyFromSymbol(symbol: String): String? {
+        val upper = symbol.trim().uppercase()
+        return when {
+            upper.endsWith(".DE") || upper.endsWith(".PA") || upper.endsWith(".MI") ||
+            upper.endsWith(".AS") || upper.endsWith(".FR") || upper.endsWith(".NL") ||
+            upper.endsWith(".FI") || upper.endsWith(".HE") -> "EUR"
+            upper.endsWith(".UK") || upper.endsWith(".L") -> "GBP"
+            upper.endsWith(".PL") || upper.endsWith(".WA") -> "PLN"
+            upper.endsWith(".PR") -> "CZK"
+            upper.endsWith(".US") -> "USD"
+            else -> null
         }
     }
 

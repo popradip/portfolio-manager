@@ -38,12 +38,22 @@ class FakeYahooFinanceApiClient : YahooFinanceApiClient() {
                 sparklinePoints = listOf(185.0, 190.0, 200.0),
                 currency = "USD"
             )
+            "AMZN.DE" -> YahooMarketData(
+                symbol = "AMZN.DE",
+                yahooSymbol = "AMZN",
+                currentPrice = 200.0,
+                previousClose = 190.0,
+                dailyChange = 10.0,
+                dailyChangePercentage = 5.26,
+                sparklinePoints = listOf(185.0, 190.0, 200.0),
+                currency = "USD"
+            )
             else -> null
         }
     }
 
-    override suspend fun fetchExchangeRate(fromCurrency: String, toCurrency: String): Double? {
-        return if (fromCurrency == "USD" && toCurrency == "EUR") 1.0 else 1.0
+    override suspend fun fetchExchangeRate(fromCurrency: String, toCurrency: String): Double {
+        return if (fromCurrency == "USD" && toCurrency == "EUR") 0.90 else 1.0
     }
 }
 
@@ -60,7 +70,8 @@ class MarketDataRepositoryTest {
             marginSummary = MarginRequirements(0.0, 0.0, 0.0, 1000.0, 1000.0, 0.0),
             positions = listOf(
                 Position("1", "VWCE", "Vanguard ETF", AssetCategory.ETF, 5.0, 160.0, 165.0, 825.0, 0.0, 25.0, 3.125, "Broad Market", "Ireland"),
-                Position("2", "AAPL", "Apple Inc.", AssetCategory.STK, 2.0, 180.0, 190.0, 380.0, 0.0, 20.0, 5.55, "Technology", "United States")
+                Position("2", "AAPL", "Apple Inc.", AssetCategory.STK, 2.0, 180.0, 190.0, 380.0, 0.0, 20.0, 5.55, "Technology", "United States"),
+                Position("3", "AMZN.DE", "Amazon.com", AssetCategory.STK, 10.0, 170.0, 170.0, 1700.0, 0.0, 0.0, 0.0, "Consumer Cyclical", "Germany", currency = "EUR")
             ),
             sectorAllocations = emptyList(),
             geographyAllocations = emptyList()
@@ -79,6 +90,13 @@ class MarketDataRepositoryTest {
         val aapl = enriched.positions.find { it.symbol == "AAPL" }
         assertNotNull(aapl)
         assertEquals(200.0, aapl!!.markPrice, 0.001)
-        assertEquals(2.0 * 200.0, aapl.marketValue, 0.001)
+
+        val amzn = enriched.positions.find { it.symbol == "AMZN.DE" }
+        assertNotNull(amzn)
+        // AMZN.DE currency must be preserved as EUR despite Yahoo returning USD
+        assertEquals("EUR", amzn!!.currency)
+        // Mark price converted from USD ($200) to EUR using 0.90 rate = €180
+        assertEquals(180.0, amzn.markPrice, 0.001)
+        assertEquals(10.0 * 180.0, amzn.marketValue, 0.001)
     }
 }
