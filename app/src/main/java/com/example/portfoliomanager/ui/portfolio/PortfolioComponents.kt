@@ -84,6 +84,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -971,6 +972,17 @@ fun Double.toCompactSignedCurrencyString(currencyCodeOrSymbol: String = "EUR"): 
     }
 }
 
+private fun Position.calculateDailyPnlPct(): Double {
+    val prevValue = marketValue - dailyPnl
+    return if (prevValue > 0) {
+        (dailyPnl / prevValue) * 100.0
+    } else if (marketValue > 0) {
+        (dailyPnl / marketValue) * 100.0
+    } else {
+        0.0
+    }
+}
+
 @Composable
 fun TopDailyPnlMoversSection(
     positions: List<Position>,
@@ -978,6 +990,8 @@ fun TopDailyPnlMoversSection(
     onPositionClick: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    var isPercentMode by rememberSaveable { mutableStateOf(true) }
+
     val mergedPositions = remember(positions) {
         positions.groupBy { it.effectiveTicker.uppercase() }.map { (effectiveSymbol, posList) ->
             if (posList.size == 1) {
@@ -1013,17 +1027,17 @@ fun TopDailyPnlMoversSection(
         }
     }
 
-    val positivePositions = remember(mergedPositions) {
+    val positivePositions = remember(mergedPositions, isPercentMode) {
         mergedPositions
             .filter { it.dailyPnl > 0.0 }
-            .sortedByDescending { it.dailyPnl }
+            .sortedByDescending { if (isPercentMode) it.calculateDailyPnlPct() else it.dailyPnl }
             .take(5)
     }
 
-    val negativePositions = remember(mergedPositions) {
+    val negativePositions = remember(mergedPositions, isPercentMode) {
         mergedPositions
             .filter { it.dailyPnl < 0.0 }
-            .sortedBy { it.dailyPnl }
+            .sortedBy { if (isPercentMode) it.calculateDailyPnlPct() else it.dailyPnl }
             .take(5)
     }
 
@@ -1032,14 +1046,37 @@ fun TopDailyPnlMoversSection(
     Column(
         modifier = modifier.fillMaxWidth()
     ) {
-        Text(
-            text = "Top denné pohyby podľa P&L",
-            style = MaterialTheme.typography.titleSmall.copy(
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
-            ),
-            modifier = Modifier.padding(bottom = 12.dp)
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (isPercentMode) "Top denné pohyby podľa %" else "Top denné pohyby podľa P&L",
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+            )
+
+            Surface(
+                onClick = { isPercentMode = !isPercentMode },
+                shape = RoundedCornerShape(6.dp),
+                color = DarkPill
+            ) {
+                Text(
+                    text = if (isPercentMode) "%" else "€",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        color = Color.White
+                    ),
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                )
+            }
+        }
 
         // Top Gainers
         if (positivePositions.isNotEmpty()) {
@@ -1063,7 +1100,9 @@ fun TopDailyPnlMoversSection(
                 )
             }
 
-            val maxPositivePnl = positivePositions.maxOfOrNull { it.dailyPnl } ?: 1.0
+            val maxPositiveVal = positivePositions.maxOfOrNull {
+                if (isPercentMode) it.calculateDailyPnlPct() else it.dailyPnl
+            } ?: 1.0
 
             Row(
                 modifier = Modifier
@@ -1072,15 +1111,9 @@ fun TopDailyPnlMoversSection(
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 positivePositions.forEach { position ->
-                    val prevValue = position.marketValue - position.dailyPnl
-                    val pnlPct = if (prevValue > 0) {
-                        (position.dailyPnl / prevValue) * 100.0
-                    } else if (position.marketValue > 0) {
-                        (position.dailyPnl / position.marketValue) * 100.0
-                    } else {
-                        0.0
-                    }
-                    val heightFraction = (position.dailyPnl / maxPositivePnl).toFloat().coerceIn(0.18f, 1f)
+                    val pnlPct = position.calculateDailyPnlPct()
+                    val posVal = if (isPercentMode) pnlPct else position.dailyPnl
+                    val heightFraction = (posVal / maxPositiveVal).toFloat().coerceIn(0.18f, 1f)
                     DailyPnlBarColumn(
                         symbol = position.symbol,
                         amountText = position.dailyPnl.toCompactSignedCurrencyString(currency),
@@ -1119,22 +1152,18 @@ fun TopDailyPnlMoversSection(
                 )
             }
 
-            val maxNegativeAbsPnl = negativePositions.maxOfOrNull { kotlin.math.abs(it.dailyPnl) } ?: 1.0
+            val maxNegativeAbsVal = negativePositions.maxOfOrNull {
+                kotlin.math.abs(if (isPercentMode) it.calculateDailyPnlPct() else it.dailyPnl)
+            } ?: 1.0
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 negativePositions.forEach { position ->
-                    val prevValue = position.marketValue - position.dailyPnl
-                    val pnlPct = if (prevValue > 0) {
-                        (position.dailyPnl / prevValue) * 100.0
-                    } else if (position.marketValue > 0) {
-                        (position.dailyPnl / position.marketValue) * 100.0
-                    } else {
-                        0.0
-                    }
-                    val heightFraction = (kotlin.math.abs(position.dailyPnl) / maxNegativeAbsPnl).toFloat().coerceIn(0.18f, 1f)
+                    val pnlPct = position.calculateDailyPnlPct()
+                    val posVal = kotlin.math.abs(if (isPercentMode) pnlPct else position.dailyPnl)
+                    val heightFraction = (posVal / maxNegativeAbsVal).toFloat().coerceIn(0.18f, 1f)
                     DailyPnlBarColumn(
                         symbol = position.symbol,
                         amountText = position.dailyPnl.toCompactSignedCurrencyString(currency),
