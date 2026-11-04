@@ -162,13 +162,6 @@ fun PortfolioScreenContent(
                         state = listState,
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        // Live Syncing Progress Indicator Banner
-                        if (uiState.isRefreshing) {
-                            item {
-                                SyncingBanner()
-                            }
-                        }
-
                         // Error Feedback Banner
                         if (uiState.errorMessage != null) {
                             item {
