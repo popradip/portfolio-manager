@@ -74,10 +74,18 @@ class MarketDataRepositoryImpl(
             val fxRatesMap = fxRatesDeferreds.awaitAll().toMap()
             AppLogger.d("MarketDataRepository", "FX Rates to $targetCurrency: $fxRatesMap")
 
+            val historicalFxDeferreds = distinctCurrencies.filter { it != targetCurrency }.map { curr ->
+                async {
+                    curr to yahooApiClient.fetchHistoricalExchangeRates(curr, targetCurrency)
+                }
+            }
+            val historicalFxMap = historicalFxDeferreds.awaitAll().toMap()
+
             // 4. Update each position with live prices and converted market value in target currency (EUR)
             val updatedPositions = updatedPositionCurrencies.map { pos ->
                 val marketData = marketDataMap[pos.effectiveTicker]
-                val fxRate = fxRatesMap[pos.currency] ?: 1.0
+                val currentFxRate = fxRatesMap[pos.currency] ?: 1.0
+                val posHistFxRates = historicalFxMap[pos.currency] ?: emptyMap()
 
                 if (marketData != null) {
                     val marketDataCurrency = marketData.currency.ifBlank { pos.currency }.uppercase()
@@ -85,20 +93,35 @@ class MarketDataRepositoryImpl(
                         1.0
                     } else {
                         val rateMarketToTarget = fxRatesMap[marketDataCurrency] ?: 1.0
-                        if (fxRate > 0.0) rateMarketToTarget / fxRate else 1.0
+                        if (currentFxRate > 0.0) rateMarketToTarget / currentFxRate else 1.0
                     }
 
                     val liveMarkPriceNative = marketData.currentPrice * priceFxToPosCurrency
-                    val costBasisPriceNative = pos.costBasisPrice
+                    val updatedMarketValueInTarget = pos.quantity * liveMarkPriceNative * currentFxRate
 
-                    val updatedMarketValueInTarget = pos.quantity * liveMarkPriceNative * fxRate
-                    val updatedCostBasisTotalInTarget = pos.quantity * costBasisPriceNative * fxRate
+                    // Calculate historical cost basis in target portfolio currency using historical FX rates at purchase dates
+                    val buyTrades = pos.trades.filter { it.buySell.uppercase() == "BUY" && it.quantity > 0 }
+                    val updatedCostBasisTotalInTarget = if (buyTrades.isNotEmpty() && pos.currency != targetCurrency && posHistFxRates.isNotEmpty()) {
+                        val totalBuyQty = buyTrades.sumOf { it.quantity }
+                        val totalBuyCostInTarget = buyTrades.fold(0.0) { acc, trade ->
+                            val tradeFx = getHistoricalFxRate(posHistFxRates, trade.date, currentFxRate)
+                            acc + (trade.quantity * trade.price * priceFxToPosCurrency * tradeFx)
+                        }
+                        if (totalBuyQty > 0.0) {
+                            (totalBuyCostInTarget / totalBuyQty) * pos.quantity
+                        } else {
+                            pos.quantity * pos.costBasisPrice * currentFxRate
+                        }
+                    } else {
+                        pos.quantity * pos.costBasisPrice * currentFxRate
+                    }
+
                     val updatedTotalPnlInTarget = updatedMarketValueInTarget - updatedCostBasisTotalInTarget
                     val updatedPnlPercentage = if (updatedCostBasisTotalInTarget > 0.0) {
                         (updatedTotalPnlInTarget / updatedCostBasisTotalInTarget) * 100.0
                     } else pos.pnlPercentage
 
-                    val updatedDailyPnlInTarget = marketData.dailyChange * priceFxToPosCurrency * pos.quantity * fxRate
+                    val updatedDailyPnlInTarget = marketData.dailyChange * priceFxToPosCurrency * pos.quantity * currentFxRate
 
                     pos.copy(
                         markPrice = liveMarkPriceNative,
@@ -107,18 +130,18 @@ class MarketDataRepositoryImpl(
                         totalPnl = updatedTotalPnlInTarget,
                         pnlPercentage = updatedPnlPercentage,
                         sparklinePoints = if (marketData.sparklinePoints.isNotEmpty()) marketData.sparklinePoints else pos.sparklinePoints,
-                        fxRateToPortfolio = fxRate
+                        fxRateToPortfolio = currentFxRate
                     )
                 } else {
-                    val updatedMarketValueInTarget = pos.marketValue * fxRate
-                    val updatedTotalPnlInTarget = pos.totalPnl * fxRate
-                    val updatedDailyPnlInTarget = pos.dailyPnl * fxRate
+                    val updatedMarketValueInTarget = pos.marketValue * currentFxRate
+                    val updatedTotalPnlInTarget = pos.totalPnl * currentFxRate
+                    val updatedDailyPnlInTarget = pos.dailyPnl * currentFxRate
 
                     pos.copy(
                         marketValue = updatedMarketValueInTarget,
                         totalPnl = updatedTotalPnlInTarget,
                         dailyPnl = updatedDailyPnlInTarget,
-                        fxRateToPortfolio = fxRate
+                        fxRateToPortfolio = currentFxRate
                     )
                 }
             }
@@ -193,6 +216,31 @@ class MarketDataRepositoryImpl(
             "JPY" -> 0.0062
             else -> 1.0
         }
+    }
+
+    private fun getHistoricalFxRate(
+        ratesMap: Map<String, Double>,
+        dateStr: String,
+        fallbackRate: Double
+    ): Double {
+        val cleanDate = dateStr.trim().take(10)
+        if (cleanDate.length < 10) return fallbackRate
+
+        ratesMap[cleanDate]?.let { return it }
+
+        if (ratesMap is java.util.NavigableMap) {
+            val floorEntry = ratesMap.floorEntry(cleanDate)
+            if (floorEntry != null) return floorEntry.value
+        } else {
+            val previousDates = ratesMap.keys.filter { it <= cleanDate }
+            if (previousDates.isNotEmpty()) {
+                val maxDate = previousDates.maxOrNull()
+                if (maxDate != null) {
+                    ratesMap[maxDate]?.let { return it }
+                }
+            }
+        }
+        return fallbackRate
     }
 
     private fun inferCurrencyFromSymbol(symbol: String): String? {

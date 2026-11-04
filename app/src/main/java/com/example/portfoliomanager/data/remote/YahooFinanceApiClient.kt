@@ -52,6 +52,8 @@ open class YahooFinanceApiClient(
         null
     }
 
+    private val historicalFxCache = mutableMapOf<String, Map<String, Double>>()
+
     /**
      * Fetches live exchange rate from Yahoo Finance (e.g., USDEUR=X).
      * Returns how many [toCurrency] units 1 [fromCurrency] unit is worth.
@@ -64,6 +66,69 @@ open class YahooFinanceApiClient(
         val yahooPairSymbol = "${from}${to}=X"
         val data = fetchChartDataForSymbol(from, yahooPairSymbol)
         data?.currentPrice
+    }
+
+    /**
+     * Fetches daily historical exchange rates map (date "YYYY-MM-DD" -> rate) for a currency pair from Yahoo Finance.
+     */
+    open suspend fun fetchHistoricalExchangeRates(fromCurrency: String, toCurrency: String = "EUR"): Map<String, Double> = withContext(Dispatchers.IO) {
+        val from = fromCurrency.trim().uppercase()
+        val to = toCurrency.trim().uppercase()
+        if (from == to) return@withContext emptyMap()
+
+        val pairKey = "${from}_${to}"
+        synchronized(historicalFxCache) {
+            historicalFxCache[pairKey]?.let { return@withContext it }
+        }
+
+        val yahooPairSymbol = "${from}${to}=X"
+        val url = "https://query1.finance.yahoo.com/v8/finance/chart/$yahooPairSymbol?interval=1d&range=10y"
+        AppLogger.d("YahooFinanceApiClient", "Fetching historical exchange rates for $yahooPairSymbol...")
+        val request = Request.Builder().url(url).build()
+
+        try {
+            val response = okHttpClient.newCall(request).execute()
+            if (!response.isSuccessful) {
+                AppLogger.d("YahooFinanceApiClient", "HTTP ${response.code} for $yahooPairSymbol history")
+                return@withContext emptyMap()
+            }
+
+            val bodyString = response.body?.string() ?: return@withContext emptyMap()
+            val jsonRoot = JSONObject(bodyString)
+            val chartObj = jsonRoot.optJSONObject("chart") ?: return@withContext emptyMap()
+            val resultArr = chartObj.optJSONArray("result") ?: return@withContext emptyMap()
+            if (resultArr.length() == 0) return@withContext emptyMap()
+
+            val resultObj = resultArr.getJSONObject(0)
+            val timestampArr = resultObj.optJSONArray("timestamp") ?: return@withContext emptyMap()
+            val indicatorsObj = resultObj.optJSONObject("indicators")
+            val quoteArr = indicatorsObj?.optJSONArray("quote")
+            val closeArr = quoteArr?.optJSONObject(0)?.optJSONArray("close") ?: return@withContext emptyMap()
+
+            val ratesByDate = java.util.TreeMap<String, Double>()
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+
+            for (i in 0 until timestampArr.length()) {
+                if (!closeArr.isNull(i)) {
+                    val rate = closeArr.optDouble(i, -1.0)
+                    val ts = timestampArr.optLong(i, 0L)
+                    if (rate > 0.0 && ts > 0L) {
+                        val dateStr = sdf.format(java.util.Date(ts * 1000L))
+                        ratesByDate[dateStr] = rate
+                    }
+                }
+            }
+
+            synchronized(historicalFxCache) {
+                historicalFxCache[pairKey] = ratesByDate
+            }
+            AppLogger.d("YahooFinanceApiClient", "Loaded ${ratesByDate.size} historical FX rates for $yahooPairSymbol")
+            ratesByDate
+        } catch (e: Exception) {
+            AppLogger.e("YahooFinanceApiClient", "Failed to fetch historical exchange rates for $yahooPairSymbol: ${e.message}", e)
+            emptyMap()
+        }
     }
 
     private fun fetchChartDataForSymbol(originalSymbol: String, yahooSymbol: String): YahooMarketData? {

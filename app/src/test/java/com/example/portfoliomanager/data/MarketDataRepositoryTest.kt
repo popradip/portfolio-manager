@@ -48,12 +48,30 @@ class FakeYahooFinanceApiClient : YahooFinanceApiClient() {
                 sparklinePoints = listOf(185.0, 190.0, 200.0),
                 currency = "USD"
             )
+            "MCD.US" -> YahooMarketData(
+                symbol = "MCD.US",
+                yahooSymbol = "MCD",
+                currentPrice = 260.0,
+                previousClose = 260.0,
+                dailyChange = 0.0,
+                dailyChangePercentage = 0.0,
+                sparklinePoints = listOf(260.0),
+                currency = "USD"
+            )
             else -> null
         }
     }
 
     override suspend fun fetchExchangeRate(fromCurrency: String, toCurrency: String): Double {
         return if (fromCurrency == "USD" && toCurrency == "EUR") 0.90 else 1.0
+    }
+
+    override suspend fun fetchHistoricalExchangeRates(fromCurrency: String, toCurrency: String): Map<String, Double> {
+        return if (fromCurrency == "USD" && toCurrency == "EUR") {
+            mapOf(
+                "2023-01-15" to 0.95
+            )
+        } else emptyMap()
     }
 }
 
@@ -98,5 +116,34 @@ class MarketDataRepositoryTest {
         // Mark price converted from USD ($200) to EUR using 0.90 rate = €180
         assertEquals(180.0, amzn.markPrice, 0.001)
         assertEquals(10.0 * 180.0, amzn.marketValue, 0.001)
+    }
+
+    @Test
+    fun enrichPortfolioWithLivePrices_usesHistoricalFxRateForCostBasis() = runTest {
+        val fakeClient = FakeYahooFinanceApiClient()
+        val repository = MarketDataRepositoryImpl(yahooApiClient = fakeClient)
+
+        val trades = listOf(
+            com.example.portfoliomanager.data.model.Trade("t1", "MCD.US", "2023-01-15", "BUY", 1.0, 260.0, 0.0, 260.0, "USD")
+        )
+
+        val testPortfolio = PortfolioData(
+            accountSummary = AccountSummary("U123", "Test Account", "EUR", 1000.0, 100.0, 100.0, 0.0, 1000.0, 0.0, 0.0, 0.0, 0.0),
+            balances = Balances(100.0, 100.0, 0.0, 0.0, 0.0, 1000.0),
+            marginSummary = MarginRequirements(0.0, 0.0, 0.0, 1000.0, 1000.0, 0.0),
+            positions = listOf(
+                Position("mcd", "MCD.US", "McDonalds", AssetCategory.STK, 1.0, 260.0, 260.0, 260.0, 0.0, 0.0, 0.0, "Consumer", "US", currency = "USD", trades = trades)
+            ),
+            sectorAllocations = emptyList(),
+            geographyAllocations = emptyList()
+        )
+
+        val enriched = repository.enrichPortfolioWithLivePrices(testPortfolio)
+        val mcd = enriched.positions.find { it.symbol == "MCD.US" }
+        assertNotNull(mcd)
+        // Current price from fakeClient is 260 USD * current rate 0.90 = 234.0 EUR market value
+        // Historical cost basis = 1.0 * 260.0 * 0.95 (historical rate on 2023-01-15) = 247.0 EUR
+        // Total PnL in EUR = 234.0 - 247.0 = -13.0 EUR
+        assertEquals(-13.0, mcd!!.totalPnl, 0.01)
     }
 }
