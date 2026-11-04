@@ -123,7 +123,7 @@ fun PortfolioScreenContent(
                 it.id == targetId || it.symbol.equals(targetId, ignoreCase = true)
             }
             if (targetIndex != -1) {
-                listState.animateScrollToItem(targetIndex + 1)
+                listState.animateScrollToItem(targetIndex + 2)
             }
             onPositionScrollHandled()
         }
@@ -175,14 +175,6 @@ fun PortfolioScreenContent(
 
                         when (uiState.selectedBottomNavTab) {
                             BottomNavTab.HOME -> {
-                                // Account Summary & Net Liquidity Card
-                                item {
-                                    AccountSummaryCard(
-                                        accountSummary = portfolioData.accountSummary,
-                                        onImportClick = { onToggleSettingsDialog(true) }
-                                    )
-                                }
-
                                 // Interactive Portfolio Evolution Chart Card
                                 item {
                                     PortfolioEvolutionChartCard(
@@ -222,6 +214,14 @@ fun PortfolioScreenContent(
 
                             BottomNavTab.ASSETS -> {
                                 val displayPositions = uiState.filteredPositions
+
+                                // Account Summary & Net Liquidity Card
+                                item(key = "assets_account_summary") {
+                                    AccountSummaryCard(
+                                        accountSummary = portfolioData.accountSummary,
+                                        onImportClick = { onToggleSettingsDialog(true) }
+                                    )
+                                }
 
                                 item(key = "assets_header") {
                                     YourAssetsHeader(

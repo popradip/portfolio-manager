@@ -393,74 +393,41 @@ fun AccountSummaryCard(
             val currency = accountSummary?.currency ?: "EUR"
             val isPositive = dailyPnl >= 0
 
-            val sparklinePoints = remember(netLiquidation, dailyPnl) {
-                val startVal = netLiquidation - dailyPnl
-                if (kotlin.math.abs(dailyPnl) < 0.01) {
-                    listOf(netLiquidation, netLiquidation)
-                } else {
-                    listOf(
-                        startVal,
-                        startVal + dailyPnl * 0.15,
-                        startVal + dailyPnl * 0.35,
-                        startVal + dailyPnl * 0.25,
-                        startVal + dailyPnl * 0.65,
-                        startVal + dailyPnl * 0.85,
-                        netLiquidation
+            Column {
+                Text(
+                    text = netLiquidation.toCurrencyString(currency),
+                    style = MaterialTheme.typography.headlineLarge.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 30.sp,
+                        color = TextPrimary
                     )
-                }
-            }
+                )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                Column {
-                    Text(
-                        text = netLiquidation.toCurrencyString(currency),
-                        style = MaterialTheme.typography.headlineLarge.copy(
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 30.sp,
-                            color = TextPrimary
-                        )
-                    )
+                Spacer(modifier = Modifier.height(4.dp))
 
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isPositive) PositiveGreenBg else NegativeRedBg
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isPositive) PositiveGreenBg else NegativeRedBg
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isPositive) Icons.AutoMirrored.Rounded.TrendingUp else Icons.Rounded.ArrowDownward,
-                                contentDescription = null,
-                                tint = if (isPositive) PositiveGreen else NegativeRed,
-                                modifier = Modifier.size(16.dp)
+                        Icon(
+                            imageVector = if (isPositive) Icons.AutoMirrored.Rounded.TrendingUp else Icons.Rounded.ArrowDownward,
+                            contentDescription = null,
+                            tint = if (isPositive) PositiveGreen else NegativeRed,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "${dailyPnl.toSignedCurrencyString(currency)} (${dailyPnlPct.toPercentageString()})",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = if (isPositive) PositiveGreen else NegativeRed
                             )
-                            Text(
-                                text = "${dailyPnl.toSignedCurrencyString(currency)} (${dailyPnlPct.toPercentageString()})",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isPositive) PositiveGreen else NegativeRed
-                                )
-                            )
-                        }
+                        )
                     }
-                }
-
-                if (sparklinePoints.size >= 2) {
-                    SparklineCanvas(
-                        points = sparklinePoints,
-                        lineColor = if (isPositive) PositiveGreen else NegativeRed,
-                        modifier = Modifier
-                            .width(90.dp)
-                            .height(36.dp)
-                    )
                 }
             }
         }
@@ -1054,7 +1021,7 @@ fun TopDailyPnlMoversSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = if (isPercentMode) "Top denné pohyby podľa %" else "Top denné pohyby podľa P&L",
+                text = "Top denné pohyby podľa P&L",
                 style = MaterialTheme.typography.titleSmall.copy(
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
@@ -1063,17 +1030,17 @@ fun TopDailyPnlMoversSection(
 
             Surface(
                 onClick = { isPercentMode = !isPercentMode },
-                shape = RoundedCornerShape(6.dp),
+                shape = RoundedCornerShape(8.dp),
                 color = DarkPill
             ) {
                 Text(
                     text = if (isPercentMode) "%" else "€",
-                    style = MaterialTheme.typography.labelSmall.copy(
+                    style = MaterialTheme.typography.labelMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
+                        fontSize = 14.sp,
                         color = Color.White
                     ),
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
                 )
             }
         }
