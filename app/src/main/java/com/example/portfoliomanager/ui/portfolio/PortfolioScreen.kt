@@ -58,6 +58,7 @@ fun PortfolioScreen(
         onClearErrorMessage = viewModel::clearErrorMessage,
         onImportCsvClick = { csvPickerLauncher.launch("*/*") },
         onClearImportedData = viewModel::clearImportedCsvAndReset,
+        onResetManualEdits = viewModel::resetManualEditsAndDeletedTrades,
         onRefreshData = { viewModel.refreshPortfolioData(forceRefresh = true) },
         onBottomNavTabSelected = viewModel::onBottomNavTabSelected,
         onTimeRangeSelected = viewModel::onTimeRangeSelected,
@@ -93,6 +94,7 @@ fun PortfolioScreenContent(
     onClearErrorMessage: () -> Unit = {},
     onImportCsvClick: () -> Unit = {},
     onClearImportedData: () -> Unit = {},
+    onResetManualEdits: () -> Unit = {},
     onRefreshData: () -> Unit = {},
     onBottomNavTabSelected: (BottomNavTab) -> Unit = {},
     onTimeRangeSelected: (PortfolioTimeRange) -> Unit = {},
@@ -268,6 +270,7 @@ fun PortfolioScreenContent(
                 errorMessage = uiState.errorMessage,
                 onImportCsvClick = onImportCsvClick,
                 onClearImportedData = onClearImportedData,
+                onResetManualEdits = onResetManualEdits,
                 onDismiss = { onToggleSettingsDialog(false) }
             )
 

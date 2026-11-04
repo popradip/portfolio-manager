@@ -2465,6 +2465,7 @@ fun IbkrSettingsDialog(
     errorMessage: String? = null,
     onImportCsvClick: () -> Unit = {},
     onClearImportedData: () -> Unit = {},
+    onResetManualEdits: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     if (!isOpen) return
@@ -2505,6 +2506,16 @@ fun IbkrSettingsDialog(
                         text = if (isImportingCsv) "Spracovávam súbor..." else "Vybrať súbor (CSV / XLSX)",
                         color = Color.White,
                         fontWeight = FontWeight.Bold
+                    )
+                }
+
+                TextButton(
+                    onClick = onResetManualEdits,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Obnoviť zmazané a manuálne upravené transakcie",
+                        style = MaterialTheme.typography.labelMedium.copy(color = TextSecondary)
                     )
                 }
 

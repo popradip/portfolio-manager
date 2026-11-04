@@ -390,6 +390,10 @@ private class FakePortfolioRepository(
 
     override suspend fun clearImportedCsvData() {}
 
+    override suspend fun resetManualEditsAndDeletedTrades(): Result<PortfolioData> {
+        return Result.success(mockData)
+    }
+
     override fun getSavedImportedCsv(): Flow<String?> = flowOf(null)
 
     override fun attachPreferencesRepository(preferencesRepository: com.example.portfoliomanager.data.local.UserPreferencesRepository) {}

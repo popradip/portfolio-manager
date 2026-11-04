@@ -386,6 +386,17 @@ class PortfolioViewModel(
     }
 
     /**
+     * Resets manual trade additions, edits, and deleted trade filters without removing saved CSV/XLSX imports.
+     */
+    fun resetManualEditsAndDeletedTrades() {
+        viewModelScope.launch {
+            repository.resetManualEditsAndDeletedTrades()
+            refreshPortfolioData(forceRefresh = true)
+            _uiState.update { it.copy(importSuccessMessage = "Manuálne úpravy a vymazané transakcie boli úspešne obnovené.") }
+        }
+    }
+
+    /**
      * Opens dialog to manually add a new purchase/trade for a position.
      */
     fun onOpenAddTradeDialog(position: Position) {

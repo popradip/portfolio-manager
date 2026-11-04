@@ -50,8 +50,8 @@ class XtbParserTest {
         assertEquals("XTB-50198829", portfolioData.accountSummary.accountId)
         assertEquals("EUR", portfolioData.accountSummary.currency)
 
-        // Verify total position count (27 open + 3 closed positions)
-        assertEquals(30, portfolioData.positions.size)
+        // Verify total position count (26 unique open + 3 closed positions)
+        assertEquals(29, portfolioData.positions.size)
 
         // Verify cash calculation from Cash Operations
         assertEquals(171.18, portfolioData.accountSummary.totalCashValue, 0.01)
@@ -74,6 +74,14 @@ class XtbParserTest {
         assertEquals("Core S&P 500", sxr8Pos!!.description)
         assertEquals(12.1905, sxr8Pos.quantity, 0.0001)
         assertEquals(8934.39, sxr8Pos.marketValue, 0.01)
+
+        // Verify QDV5 position is not duplicated
+        val qdv5Positions = portfolioData.positions.filter { it.symbol.contains("QDV5", ignoreCase = true) }
+        println("QDV5 positions count: ${qdv5Positions.size}")
+        qdv5Positions.forEach { pos ->
+            println("Pos ID: ${pos.id}, symbol: ${pos.symbol}, desc: ${pos.description}, qty: ${pos.quantity}, trades: ${pos.trades.size}")
+        }
+        assertEquals(1, qdv5Positions.size)
 
         // Verify trades/purchase history for positions
         assertTrue("McDonald's should have parsed trades", mcdPos.trades.isNotEmpty())

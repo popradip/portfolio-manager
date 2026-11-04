@@ -45,4 +45,66 @@ class PortfolioRepositoryTest {
         assertTrue(data.sectorAllocations.any { it.sector == "Technology" })
         assertTrue(data.geographyAllocations.any { it.country == "United States" })
     }
+
+    @Test
+    fun addManualTrade_smallAddition_doesNotDuplicateAllTransactions() = runBlocking {
+        val repository = PortfolioRepositoryImpl()
+        val initialData = repository.getPortfolioData(forceRefresh = true).getOrThrow()
+        val firstPos = initialData.positions.first()
+        val initialQty = firstPos.quantity
+
+        val smallTrade = com.example.portfoliomanager.data.model.Trade(
+            id = "manual_small_1",
+            symbol = firstPos.symbol,
+            date = "2024-05-20",
+            buySell = "BUY",
+            quantity = 0.29,
+            price = 10.0,
+            commission = 0.0,
+            totalAmount = 2.90
+        )
+
+        val result = repository.addManualTrade(firstPos.id, smallTrade)
+        assertTrue(result.isSuccess)
+        val updatedData = result.getOrThrow()
+        val updatedPos = updatedData.positions.find { it.symbol.equals(firstPos.symbol, ignoreCase = true) }
+        assertNotNull(updatedPos)
+        assertEquals(initialQty + 0.29, updatedPos!!.quantity, 0.01)
+    }
+
+    @Test
+    fun addManualTrade_matchingBaseTrade_deduplicatesAndDoesNotDoubleQuantity() = runBlocking {
+        val repository = PortfolioRepositoryImpl()
+        val initialData = repository.getPortfolioData(forceRefresh = true).getOrThrow()
+        val firstPos = initialData.positions.first()
+
+        val baseTrade = firstPos.trades.firstOrNull() ?: com.example.portfoliomanager.data.model.Trade(
+            id = "base_1",
+            symbol = firstPos.symbol,
+            date = "2024-03-10 12:00:00",
+            buySell = "BUY",
+            quantity = firstPos.quantity,
+            price = firstPos.costBasisPrice,
+            commission = 0.0,
+            totalAmount = firstPos.quantity * firstPos.costBasisPrice
+        )
+
+        val duplicateManualTrade = com.example.portfoliomanager.data.model.Trade(
+            id = "manual_dup_1",
+            symbol = firstPos.symbol.substringBefore('.'),
+            date = baseTrade.date.take(10),
+            buySell = "BUY",
+            quantity = baseTrade.quantity,
+            price = baseTrade.price,
+            commission = 0.0,
+            totalAmount = baseTrade.quantity * baseTrade.price
+        )
+
+        val result = repository.addManualTrade(firstPos.id, duplicateManualTrade)
+        assertTrue(result.isSuccess)
+        val updatedData = result.getOrThrow()
+        val updatedPos = updatedData.positions.find { it.symbol.equals(firstPos.symbol, ignoreCase = true) }
+        assertNotNull(updatedPos)
+        assertEquals(firstPos.quantity, updatedPos!!.quantity, 0.01)
+    }
 }

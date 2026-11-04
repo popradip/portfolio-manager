@@ -263,16 +263,26 @@ class XtbCsvParser : BrokerCsvParser {
                     positions.add(position)
                 } else {
                     // Lot row (Trade) e.g., BUY / SELL
-                    if (ticker.isBlank()) continue
+                    val rawTicker = ticker.ifBlank { currentTicker }
+                    if (rawTicker.isBlank()) continue
+
+                    val effectiveTicker = if (currentTicker.isNotBlank() &&
+                        (rawTicker.equals(currentTicker, ignoreCase = true) ||
+                         rawTicker.substringBefore('.').equals(currentTicker.substringBefore('.'), ignoreCase = true))) {
+                        currentTicker
+                    } else {
+                        rawTicker
+                    }
+
                     val positionId = r.getOrElse(nameIdx) { "" }.trim()
-                    val tradeId = if (positionId.isNotBlank()) "xtb_trade_$positionId" else "xtb_trade_${ticker}_${tradesMap.values.sumOf { it.size } + 1}"
+                    val tradeId = if (positionId.isNotBlank()) "xtb_trade_$positionId" else "xtb_trade_${effectiveTicker}_${tradesMap.values.sumOf { it.size } + 1}"
                     val rawDate = r.getOrElse(openTimeIdx) { "" }
                     val formattedDate = parseExcelDate(rawDate)
                     val commission = r.getOrElse(commIdx) { "" }.toDoubleOrNull() ?: 0.0
 
                     val trade = Trade(
                         id = tradeId,
-                        symbol = ticker,
+                        symbol = effectiveTicker,
                         date = formattedDate,
                         buySell = typeVal.uppercase(),
                         quantity = vol,
@@ -280,7 +290,7 @@ class XtbCsvParser : BrokerCsvParser {
                         commission = commission,
                         totalAmount = openPrice * vol
                     )
-                    tradesMap.getOrPut(ticker.uppercase()) { mutableListOf() }.add(trade)
+                    tradesMap.getOrPut(effectiveTicker.uppercase()) { mutableListOf() }.add(trade)
                 }
             }
         }
@@ -406,6 +416,7 @@ class XtbCsvParser : BrokerCsvParser {
         for ((upperTicker, info) in closedTickerMap) {
             val existsInOpen = positions.any { pos ->
                 pos.symbol.equals(info.ticker, ignoreCase = true) ||
+                pos.symbol.substringBefore('.').equals(info.ticker.substringBefore('.'), ignoreCase = true) ||
                 (pos.description.isNotBlank() && pos.description.equals(info.instrumentName, ignoreCase = true))
             }
             if (!existsInOpen) {
@@ -434,14 +445,56 @@ class XtbCsvParser : BrokerCsvParser {
             }
         }
 
-        val positionsWithTrades = positions.map { pos ->
+        // Deduplicate and merge open positions with the same symbol / base symbol
+        val deduplicatedPositions = mutableListOf<Position>()
+        val groupedBySymbol = positions.groupBy { it.symbol.trim().uppercase().substringBefore('.') }
+
+        for ((baseSymbol, posList) in groupedBySymbol) {
+            if (posList.size == 1) {
+                deduplicatedPositions.add(posList.first())
+            } else {
+                val primaryPos = posList.find { it.symbol.contains('.') && it.quantity > 0 }
+                    ?: posList.find { it.quantity > 0 }
+                    ?: posList.first()
+
+                val totalQty = posList.sumOf { it.quantity }
+                val totalMarketVal = posList.sumOf { it.marketValue }
+                val totalPnl = posList.sumOf { it.totalPnl }
+                val markPrice = if (totalQty > 0.0) totalMarketVal / totalQty else primaryPos.markPrice
+                val costBasisTotal = posList.sumOf { it.costBasisPrice * it.quantity }
+                val costBasisPrice = if (totalQty > 0.0) costBasisTotal / totalQty else primaryPos.costBasisPrice
+                val pnlPercentage = if (costBasisTotal > 0.0) (totalPnl / costBasisTotal) * 100.0 else primaryPos.pnlPercentage
+
+                val mergedPosition = primaryPos.copy(
+                    id = "xtb_merged_pos_$baseSymbol",
+                    quantity = totalQty,
+                    costBasisPrice = costBasisPrice,
+                    markPrice = markPrice,
+                    marketValue = totalMarketVal,
+                    totalPnl = totalPnl,
+                    pnlPercentage = pnlPercentage
+                )
+                deduplicatedPositions.add(mergedPosition)
+            }
+        }
+
+        val positionsWithTrades = deduplicatedPositions.map { pos ->
             val posSymbolUpper = pos.symbol.uppercase()
+            val posBaseSymbol = posSymbolUpper.substringBefore('.')
             val posDescLower = pos.description.trim().lowercase()
 
-            val symbolTrades = tradesMap[posSymbolUpper] ?: emptyList()
+            val symbolTrades = tradesMap[posSymbolUpper]
+                ?: tradesMap[posBaseSymbol]
+                ?: tradesMap.entries.find { (key, _) ->
+                    key == posSymbolUpper || key.substringBefore('.') == posBaseSymbol
+                }?.value
+                ?: emptyList()
+
             val descTrades = closedTickerMap.values
                 .filter { info ->
-                    info.ticker.uppercase() == posSymbolUpper ||
+                    val infoTickerUpper = info.ticker.uppercase()
+                    infoTickerUpper == posSymbolUpper ||
+                    infoTickerUpper.substringBefore('.') == posBaseSymbol ||
                     (posDescLower.isNotBlank() && info.instrumentName.trim().lowercase() == posDescLower)
                 }
                 .flatMap { it.trades }
