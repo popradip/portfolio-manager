@@ -100,7 +100,7 @@ fun PortfolioScreenContent(
     onTimeRangeSelected: (PortfolioTimeRange) -> Unit = {},
     onOpenAddTradeDialog: (com.example.portfoliomanager.data.model.Position) -> Unit = {},
     onDismissAddTradeDialog: () -> Unit = {},
-    onAddManualTrade: (positionId: String, quantity: Double, price: Double, date: String, commission: Double) -> Unit = { _, _, _, _, _ -> },
+    onAddManualTrade: (positionId: String, quantity: Double, price: Double, date: String, commission: Double, buySell: String) -> Unit = { _, _, _, _, _, _ -> },
     onOpenEditTradeDialog: (com.example.portfoliomanager.data.model.Position, com.example.portfoliomanager.data.model.Trade) -> Unit = { _, _ -> },
     onDismissEditTradeDialog: () -> Unit = {},
     onEditTrade: (tradeId: String, quantity: Double, price: Double, date: String, commission: Double, buySell: String) -> Unit = { _, _, _, _, _, _ -> },
@@ -278,9 +278,9 @@ fun PortfolioScreenContent(
             AddTradeDialog(
                 position = uiState.addTradePosition,
                 onDismiss = onDismissAddTradeDialog,
-                onSaveTrade = { quantity, price, date, commission ->
+                onSaveTrade = { quantity, price, date, commission, buySell ->
                     uiState.addTradePosition?.let { pos ->
-                        onAddManualTrade(pos.id, quantity, price, date, commission)
+                        onAddManualTrade(pos.id, quantity, price, date, commission, buySell)
                     }
                 }
             )

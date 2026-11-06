@@ -269,6 +269,30 @@ class PortfolioViewModelTest {
     }
 
     @Test
+    fun `addManualTrade with SELL creates sell trade and closes dialog`() {
+        val targetPosition = viewModel.uiState.value.filteredPositions.first()
+        viewModel.onOpenAddTradeDialog(targetPosition)
+
+        viewModel.addManualTrade(
+            positionId = targetPosition.id,
+            quantity = 2.0,
+            price = 200.0,
+            date = "2025-03-30",
+            commission = 1.0,
+            buySell = "SELL"
+        )
+
+        val state = viewModel.uiState.value
+        assertNull(state.addTradePosition)
+
+        val updatedPosition = state.filteredPositions.find { it.id == targetPosition.id }
+        assertNotNull(updatedPosition)
+        val addedTrade = updatedPosition!!.trades.find { it.price == 200.0 && it.quantity == 2.0 }
+        assertNotNull(addedTrade)
+        assertEquals("SELL", addedTrade!!.buySell)
+    }
+
+    @Test
     fun `selecting ALL time range matches total portfolio PnL`() {
         val data = viewModel.uiState.value.portfolioData
         assertNotNull(data)

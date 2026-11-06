@@ -2289,13 +2289,13 @@ fun PositionCard(
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Add,
-                                    contentDescription = "Pridať nákup",
+                                    contentDescription = "Pridať",
                                     tint = Color(0xFF2563EB),
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Pridať nákup",
+                                    text = "Pridať",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFF2563EB)
@@ -2750,7 +2750,7 @@ fun PortfolioBottomNavBar(
 fun AddTradeDialog(
     position: Position?,
     onDismiss: () -> Unit,
-    onSaveTrade: (quantity: Double, price: Double, date: String, commission: Double) -> Unit
+    onSaveTrade: (quantity: Double, price: Double, date: String, commission: Double, buySell: String) -> Unit
 ) {
     if (position == null) return
 
@@ -2759,6 +2759,7 @@ fun AddTradeDialog(
         java.time.LocalDate.now().format(formatter)
     }
 
+    var buySellState by remember { mutableStateOf("BUY") }
     var quantityInput by remember { mutableStateOf("") }
     var priceInput by remember { mutableStateOf(if (position.markPrice > 0) String.format(Locale.US, "%.2f", position.markPrice) else "") }
     var dateInput by remember { mutableStateOf(defaultDate) }
@@ -2813,7 +2814,7 @@ fun AddTradeDialog(
         title = {
             Column {
                 Text(
-                    text = "Pridať nákup",
+                    text = "Pridať",
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                 )
                 Text(
@@ -2839,6 +2840,32 @@ fun AddTradeDialog(
                             modifier = Modifier.padding(10.dp)
                         )
                     }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = buySellState == "BUY",
+                        onClick = { buySellState = "BUY" },
+                        label = { Text("NÁKUP", fontWeight = FontWeight.Bold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = PositiveGreenBg,
+                            selectedLabelColor = PositiveGreen
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilterChip(
+                        selected = buySellState == "SELL",
+                        onClick = { buySellState = "SELL" },
+                        label = { Text("PREDAJ", fontWeight = FontWeight.Bold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = NegativeRedBg,
+                            selectedLabelColor = NegativeRed
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
                 }
 
                 OutlinedTextField(
@@ -2869,7 +2896,7 @@ fun AddTradeDialog(
                         priceInput = it
                         errorMessage = null
                     },
-                    label = { Text("Nákupná cena za kus (${position.currency})") },
+                    label = { Text(if (buySellState == "BUY") "Nákupná cena za kus (${position.currency})" else "Predajná cena za kus (${position.currency})") },
                     placeholder = { Text("napr. 150.00") },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
@@ -2890,7 +2917,7 @@ fun AddTradeDialog(
                         value = dateInput,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Dátum nákupu") },
+                        label = { Text(if (buySellState == "BUY") "Dátum nákupu" else "Dátum predaja") },
                         placeholder = { Text("YYYY-MM-DD") },
                         singleLine = true,
                         trailingIcon = {
@@ -2927,7 +2954,7 @@ fun AddTradeDialog(
                         commissionInput = it
                         errorMessage = null
                     },
-                    label = { Text("Poplatok za nákup (voliteľné)") },
+                    label = { Text(if (buySellState == "BUY") "Poplatok za nákup (voliteľné)" else "Poplatok za predaj (voliteľné)") },
                     placeholder = { Text("0.0") },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
@@ -2956,20 +2983,20 @@ fun AddTradeDialog(
                         return@Button
                     }
                     if (price == null || price <= 0) {
-                        errorMessage = "Zadajte platnú kladnú nákupnú cenu."
+                        errorMessage = if (buySellState == "BUY") "Zadajte platnú kladnú nákupnú cenu." else "Zadajte platnú kladnú predajnú cenu."
                         return@Button
                     }
                     if (dateInput.isBlank()) {
-                        errorMessage = "Zadajte dátum nákupu."
+                        errorMessage = if (buySellState == "BUY") "Zadajte dátum nákupu." else "Zadajte dátum predaja."
                         return@Button
                     }
 
-                    onSaveTrade(qty, price, dateInput.trim(), comm)
+                    onSaveTrade(qty, price, dateInput.trim(), comm, buySellState)
                 },
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
             ) {
-                Text("Uložiť nákup", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                Text(if (buySellState == "BUY") "Uložiť nákup" else "Uložiť predaj", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
             }
         },
         dismissButton = {

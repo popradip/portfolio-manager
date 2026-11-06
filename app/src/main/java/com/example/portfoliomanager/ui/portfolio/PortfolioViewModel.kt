@@ -475,21 +475,23 @@ class PortfolioViewModel(
     }
 
     /**
-     * Adds a manual purchase trade to a position, recalculates portfolio metrics and persists it.
+     * Adds a manual trade (buy or sell) to a position, recalculates portfolio metrics and persists it.
      */
     fun addManualTrade(
         positionId: String,
         quantity: Double,
         price: Double,
         date: String,
-        commission: Double = 0.0
+        commission: Double = 0.0,
+        buySell: String = "BUY"
     ) {
         val position = _uiState.value.portfolioData?.positions?.find { it.id == positionId }
             ?: _uiState.value.addTradePosition
             ?: return
 
         val tradeId = "manual_${System.currentTimeMillis()}"
-        val totalAmount = (quantity * price) + commission
+        val normalizedBuySell = buySell.uppercase()
+        val totalAmount = if (normalizedBuySell == "BUY") (quantity * price) + commission else (quantity * price) - commission
         val trade = com.example.portfoliomanager.data.model.Trade(
             id = tradeId,
             symbol = position.symbol,
@@ -497,11 +499,11 @@ class PortfolioViewModel(
                 val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd")
                 java.time.LocalDate.now().format(formatter)
             },
-            buySell = "BUY",
+            buySell = normalizedBuySell,
             quantity = quantity,
             price = price,
             commission = commission,
-            totalAmount = totalAmount
+            totalAmount = maxOf(0.0, totalAmount)
         )
 
         viewModelScope.launch {
@@ -516,7 +518,7 @@ class PortfolioViewModel(
                 onFailure = { throwable ->
                     _uiState.update { state ->
                         state.copy(
-                            errorMessage = throwable.message ?: "Chyba pri pridávaní nákupu."
+                            errorMessage = throwable.message ?: "Chyba pri pridávaní transakcie."
                         )
                     }
                 }
