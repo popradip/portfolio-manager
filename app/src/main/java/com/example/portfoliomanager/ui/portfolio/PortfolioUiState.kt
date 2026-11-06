@@ -78,5 +78,6 @@ data class PortfolioUiState(
     val deleteTradePosition: Position? = null,
     val deleteTrade: Trade? = null,
     val editTickerPosition: Position? = null,
+    val tradesDialogPosition: Position? = null,
     val selectedPositionIdForScroll: String? = null
 )

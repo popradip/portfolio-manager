@@ -234,6 +234,18 @@ class PortfolioViewModelTest {
     }
 
     @Test
+    fun `trades overlay dialog opens and dismisses correctly`() {
+        val targetPosition = viewModel.uiState.value.filteredPositions.first()
+        assertNull(viewModel.uiState.value.tradesDialogPosition)
+
+        viewModel.onOpenTradesDialog(targetPosition)
+        assertEquals(targetPosition, viewModel.uiState.value.tradesDialogPosition)
+
+        viewModel.onDismissTradesDialog()
+        assertNull(viewModel.uiState.value.tradesDialogPosition)
+    }
+
+    @Test
     fun `manual trade dialog opens and dismisses correctly`() {
         val targetPosition = viewModel.uiState.value.filteredPositions.first()
         assertNull(viewModel.uiState.value.addTradePosition)

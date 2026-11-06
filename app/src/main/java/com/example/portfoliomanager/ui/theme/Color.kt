@@ -1,6 +1,7 @@
 package com.example.portfoliomanager.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
@@ -15,30 +16,32 @@ val Pink40 = Color(0xFF7D5260)
 
 // Fixed Base Colors
 val DarkPillBase = Color(0xFF0F172A)
-val ActiveLimePill = Color(0xFFD2F53B)
-val ActiveLimePillText = Color(0xFF0F172A)
+val ActiveLimePill: Color
+    @Composable get() = MaterialTheme.colorScheme.primary
+val ActiveLimePillText: Color
+    @Composable get() = MaterialTheme.colorScheme.onPrimary
 
-// Dynamic theme colors adapted for Light and Dark modes
+// Dynamic theme colors adapted from MaterialTheme colorScheme for Material You / System theme integration
 val PortfolioBg: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF0F172A) else Color(0xFFF6F7FB)
+    @Composable get() = MaterialTheme.colorScheme.background
 
 val CardBackground: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF1E293B) else Color(0xFFFFFFFF)
+    @Composable get() = MaterialTheme.colorScheme.surface
 
 val DarkPill: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF334155) else Color(0xFF0F172A)
+    @Composable get() = MaterialTheme.colorScheme.primary
 
 val UnselectedPillBg: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF334155) else Color(0xFFE2E8F0)
+    @Composable get() = MaterialTheme.colorScheme.surfaceVariant
 
 val UnselectedPillText: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF94A3B8) else Color(0xFF475569)
+    @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 
 val TextPrimary: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFFF8FAFC) else Color(0xFF0F172A)
+    @Composable get() = MaterialTheme.colorScheme.onSurface
 
 val TextSecondary: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF94A3B8) else Color(0xFF64748B)
+    @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 
 val PositiveGreen = Color(0xFF10B981)
 val PositiveGreenBg: Color
@@ -49,7 +52,7 @@ val NegativeRedBg: Color
     @Composable get() = if (isSystemInDarkTheme()) Color(0xFF7F1D1D) else Color(0xFFFEF2F2)
 
 val CardBorderColor: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF334155) else Color(0xFFE2E8F0)
+    @Composable get() = MaterialTheme.colorScheme.outlineVariant
 
 val InputFieldBg: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF334155) else Color(0xFFFFFFFF)
+    @Composable get() = MaterialTheme.colorScheme.surfaceVariant

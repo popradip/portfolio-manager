@@ -28,8 +28,14 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Analytics
@@ -40,6 +46,7 @@ import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material3.FilterChip
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FileUpload
@@ -586,7 +593,7 @@ fun PortfolioEvolutionChartCard(
                         val isSelected = range == selectedTimeRange
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = if (isSelected) DarkPill else Color(0xFFF1F5F9),
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else UnselectedPillBg,
                             modifier = Modifier.clickable { onTimeRangeSelected(range) }
                         ) {
                             Text(
@@ -594,7 +601,7 @@ fun PortfolioEvolutionChartCard(
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                     fontSize = 11.sp,
-                                    color = if (isSelected) Color.White else TextSecondary
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else UnselectedPillText
                                 ),
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)
                             )
@@ -1491,7 +1498,7 @@ fun ExpandableMarginCard(
                             Surface(
                                 onClick = { onMarginTabSelected(tab) },
                                 shape = RoundedCornerShape(16.dp),
-                                color = if (isSelected) DarkPill else UnselectedPillBg,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else UnselectedPillBg,
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Box(
@@ -1502,7 +1509,7 @@ fun ExpandableMarginCard(
                                         text = tab.displayName,
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (isSelected) Color.White else UnselectedPillText
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else UnselectedPillText
                                         )
                                     )
                                 }
@@ -1607,7 +1614,7 @@ fun BreakdownAnalyticsCard(
                             Surface(
                                 onClick = { onBreakdownTabSelected(tab) },
                                 shape = RoundedCornerShape(16.dp),
-                                color = if (isSelected) DarkPill else UnselectedPillBg,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else UnselectedPillBg,
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Box(
@@ -1618,7 +1625,7 @@ fun BreakdownAnalyticsCard(
                                         text = tab.displayName,
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (isSelected) Color.White else UnselectedPillText
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else UnselectedPillText
                                         )
                                     )
                                 }
@@ -1917,14 +1924,14 @@ fun YourAssetsHeader(
                     },
                     shape = RoundedCornerShape(20.dp),
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Color(0xFF00D2C8),
-                        selectedLabelColor = Color(0xFF0F172A),
-                        containerColor = Color.White,
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
                         labelColor = TextSecondary
                     ),
                     border = FilterChipDefaults.filterChipBorder(
                         borderColor = CardBorderColor,
-                        selectedBorderColor = Color(0xFF00D2C8),
+                        selectedBorderColor = MaterialTheme.colorScheme.primary,
                         borderWidth = 1.dp,
                         selectedBorderWidth = 1.dp,
                         enabled = true,
@@ -1961,6 +1968,7 @@ fun YourAssetsSection(
     onSearchQueryChanged: (String) -> Unit,
     onCategoryFilterSelected: (CategoryFilter) -> Unit,
     onTogglePositionExpanded: (String) -> Unit,
+    onViewTradesClick: (Position) -> Unit = {},
     onAddTradeClick: (Position) -> Unit = {},
     onEditTickerClick: (Position) -> Unit = {},
     onEditTradeClick: (Position, Trade) -> Unit = { _, _ -> },
@@ -1989,6 +1997,7 @@ fun YourAssetsSection(
                     position = position,
                     isExpanded = isExpanded,
                     onToggleExpand = { onTogglePositionExpanded(position.id) },
+                    onViewTradesClick = { onViewTradesClick(position) },
                     onAddTradeClick = { onAddTradeClick(position) },
                     onEditTickerClick = { onEditTickerClick(position) },
                     onEditTradeClick = { trade -> onEditTradeClick(position, trade) },
@@ -2006,6 +2015,7 @@ fun PositionCard(
     position: Position,
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
+    onViewTradesClick: () -> Unit = {},
     onAddTradeClick: () -> Unit = {},
     onEditTickerClick: () -> Unit = {},
     onEditTradeClick: (Trade) -> Unit = {},
@@ -2013,6 +2023,7 @@ fun PositionCard(
     modifier: Modifier = Modifier
 ) {
     val isPositive = position.dailyPnl >= 0
+    val dailyPnlPct = position.calculateDailyPnlPct()
     val categoryLabel = when (position.assetCategory) {
         com.example.portfoliomanager.data.model.AssetCategory.STK -> "AKCIE"
         com.example.portfoliomanager.data.model.AssetCategory.CRYPTO -> "KRYPTO"
@@ -2171,7 +2182,7 @@ fun PositionCard(
                         style = MaterialTheme.typography.labelSmall.copy(color = TextSecondary)
                     )
                     Text(
-                        text = position.dailyPnl.toSignedCurrencyString("EUR"),
+                        text = "${position.dailyPnl.toSignedCurrencyString("EUR")} (${dailyPnlPct.toPercentageString()})",
                         style = MaterialTheme.typography.titleSmall.copy(
                             fontWeight = FontWeight.Bold,
                             color = if (isPositive) PositiveGreen else NegativeRed
@@ -2220,37 +2231,38 @@ fun PositionCard(
                         )
                     }
 
-                    // --- Trades / Purchase History Section ---
+                    // --- Action Bar for Trades & Ticker ---
                     Spacer(modifier = Modifier.height(14.dp))
                     HorizontalDivider(color = CardBorderColor, thickness = 1.dp)
                     Spacer(modifier = Modifier.height(10.dp))
-
-                    var isTradesExpanded by remember { mutableStateOf(false) }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { isTradesExpanded = !isTradesExpanded }
-                                .padding(vertical = 4.dp, horizontal = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        Button(
+                            onClick = onViewTradesClick,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            ),
+                            border = BorderStroke(1.dp, CardBorderColor),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Icon(
-                                imageVector = if (isTradesExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                                contentDescription = "Toggle Trade History",
-                                tint = TextSecondary,
-                                modifier = Modifier.size(20.dp)
+                                imageVector = Icons.AutoMirrored.Rounded.ReceiptLong,
+                                contentDescription = "Zobraziť transakcie",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
                             )
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Transakcie (${position.trades.size})",
-                                style = MaterialTheme.typography.titleSmall.copy(
+                                style = MaterialTheme.typography.labelSmall.copy(
                                     fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                             )
                         }
@@ -2263,12 +2275,12 @@ fun PositionCard(
                                 onClick = onEditTickerClick,
                                 shape = RoundedCornerShape(10.dp),
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                border = BorderStroke(1.dp, Color(0xFF64748B))
+                                border = BorderStroke(1.dp, CardBorderColor)
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Edit,
                                     contentDescription = "Upraviť ticker",
-                                    tint = Color(0xFF64748B),
+                                    tint = TextSecondary,
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -2276,7 +2288,7 @@ fun PositionCard(
                                     text = if (position.alternativeTicker.isNullOrBlank()) "Ticker" else position.alternativeTicker,
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF64748B)
+                                        color = TextSecondary
                                     )
                                 )
                             }
@@ -2285,12 +2297,12 @@ fun PositionCard(
                                 onClick = onAddTradeClick,
                                 shape = RoundedCornerShape(10.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                border = BorderStroke(1.dp, Color(0xFF2563EB))
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Add,
                                     contentDescription = "Pridať",
-                                    tint = Color(0xFF2563EB),
+                                    tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -2298,125 +2310,9 @@ fun PositionCard(
                                     text = "Pridať",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF2563EB)
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                 )
-                            }
-                        }
-                    }
-
-                    AnimatedVisibility(
-                        visible = isTradesExpanded,
-                        enter = expandVertically() + fadeIn(),
-                        exit = shrinkVertically() + fadeOut()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(top = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            if (position.trades.isEmpty()) {
-                                Text(
-                                    text = "Zatiaľ neboli zaevidované žiadne transakcie.",
-                                    style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary),
-                                    modifier = Modifier.padding(vertical = 4.dp)
-                                )
-                            } else {
-                                position.trades.forEach { trade ->
-                                    val isBuy = trade.buySell.uppercase() == "BUY"
-                                    val tradeCurr = trade.currency.ifBlank { position.currency }
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = InputFieldBg,
-                                        border = BorderStroke(1.dp, CardBorderColor),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(10.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Column {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                                ) {
-                                                    Surface(
-                                                        shape = RoundedCornerShape(6.dp),
-                                                        color = if (isBuy) PositiveGreenBg else NegativeRedBg
-                                                    ) {
-                                                        Text(
-                                                            text = if (isBuy) "NÁKUP" else "PREDAJ",
-                                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                                fontSize = 10.sp,
-                                                                fontWeight = FontWeight.Bold,
-                                                                color = if (isBuy) PositiveGreen else NegativeRed
-                                                            ),
-                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                        )
-                                                    }
-
-                                                    Text(
-                                                        text = trade.date,
-                                                        style = MaterialTheme.typography.labelMedium.copy(
-                                                            fontWeight = FontWeight.SemiBold,
-                                                            color = TextPrimary
-                                                        )
-                                                    )
-                                                }
-
-                                                Spacer(modifier = Modifier.height(2.dp))
-
-                                                Text(
-                                                    text = "${String.format(Locale.US, "%,.2f", trade.quantity)} ks @ ${trade.price.toCurrencyString(tradeCurr)}" +
-                                                            if (trade.commission > 0) " (poplatok: ${trade.commission.toCurrencyString(tradeCurr)})" else "",
-                                                    style = MaterialTheme.typography.bodySmall.copy(
-                                                        color = TextSecondary,
-                                                        fontSize = 12.sp
-                                                    )
-                                                )
-                                            }
-
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                            ) {
-                                                Text(
-                                                    text = trade.totalAmount.toCurrencyString(tradeCurr),
-                                                    style = MaterialTheme.typography.titleSmall.copy(
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = TextPrimary
-                                                    )
-                                                )
-
-                                                IconButton(
-                                                    onClick = { onEditTradeClick(trade) },
-                                                    modifier = Modifier.size(28.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Edit,
-                                                        contentDescription = "Upraviť transakciu",
-                                                        tint = Color(0xFF64748B),
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                }
-
-                                                IconButton(
-                                                    onClick = { onDeleteTradeClick(trade) },
-                                                    modifier = Modifier.size(28.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Delete,
-                                                        contentDescription = "Odstrániť transakciu",
-                                                        tint = Color(0xFFEF4444),
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
@@ -2691,7 +2587,8 @@ fun PortfolioBottomNavBar(
 ) {
     Surface(
         shape = RoundedCornerShape(28.dp),
-        color = DarkPill,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, CardBorderColor),
         shadowElevation = 8.dp,
         modifier = modifier
             .fillMaxWidth()
@@ -2706,8 +2603,8 @@ fun PortfolioBottomNavBar(
         ) {
             BottomNavTab.entries.forEach { tab ->
                 val isSelected = tab == selectedTab
-                val backgroundColor = if (isSelected) ActiveLimePill else Color.Transparent
-                val contentColor = if (isSelected) ActiveLimePillText else Color.White.copy(alpha = 0.7f)
+                val backgroundColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+                val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else TextSecondary
 
                 Surface(
                     onClick = { onTabSelected(tab) },
@@ -3398,5 +3295,329 @@ fun DeleteTradeDialog(
             }
         }
     )
+}
+
+// --- Position Trades Overlay Modal Dialog ---
+
+@Composable
+fun PositionTradesDialog(
+    position: Position?,
+    onDismiss: () -> Unit,
+    onAddTradeClick: (Position) -> Unit,
+    onEditTradeClick: (Position, Trade) -> Unit,
+    onDeleteTradeClick: (Position, Trade) -> Unit
+) {
+    if (position == null) return
+
+    val categoryLabel = when (position.assetCategory) {
+        com.example.portfoliomanager.data.model.AssetCategory.STK -> "AKCIE"
+        com.example.portfoliomanager.data.model.AssetCategory.CRYPTO -> "KRYPTO"
+        com.example.portfoliomanager.data.model.AssetCategory.OPT -> "OPCIE"
+        com.example.portfoliomanager.data.model.AssetCategory.ETF -> "ETF"
+        com.example.portfoliomanager.data.model.AssetCategory.BOND -> "DLHOPISY"
+        com.example.portfoliomanager.data.model.AssetCategory.CASH -> "HOTOVOSŤ"
+        else -> "OSTATNÉ"
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = CardBackground,
+            border = BorderStroke(1.dp, CardBorderColor),
+            tonalElevation = 6.dp,
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.85f)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = parseAssetCategoryColor(position.assetCategory.name),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = position.symbol.take(2).uppercase(),
+                                    style = MaterialTheme.typography.titleSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                )
+                            }
+                        }
+
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = position.symbol,
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFF1F5F9)
+                                ) {
+                                    Text(
+                                        text = categoryLabel,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextSecondary
+                                        ),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+
+                            Text(
+                                text = "Transakcie (${position.trades.size})",
+                                style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary)
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Zavrieť",
+                            tint = TextSecondary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(color = CardBorderColor, thickness = 1.dp)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Toolbar
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "História nákupov a predajov",
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                    )
+
+                    Button(
+                        onClick = { onAddTradeClick(position) },
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = "Pridať transakciu",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Pridať",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Trades List Content
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    if (position.trades.isEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ReceiptLong,
+                                contentDescription = null,
+                                tint = TextSecondary,
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Zatiaľ neboli zaevidované žiadne transakcie.",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = TextSecondary,
+                                    textAlign = TextAlign.Center
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            OutlinedButton(
+                                onClick = { onAddTradeClick(position) },
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color(0xFF2563EB))
+                            ) {
+                                Text(
+                                    text = "Pridať prvú transakciu",
+                                    color = Color(0xFF2563EB),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(
+                                items = position.trades,
+                                key = { trade -> trade.id }
+                            ) { trade ->
+                                val isBuy = trade.buySell.uppercase() == "BUY"
+                                val tradeCurr = trade.currency.ifBlank { position.currency }
+
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = InputFieldBg,
+                                    border = BorderStroke(1.dp, CardBorderColor),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = if (isBuy) PositiveGreenBg else NegativeRedBg
+                                                ) {
+                                                    Text(
+                                                        text = if (isBuy) "NÁKUP" else "PREDAJ",
+                                                        style = MaterialTheme.typography.labelSmall.copy(
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (isBuy) PositiveGreen else NegativeRed
+                                                        ),
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+
+                                                Text(
+                                                    text = trade.date,
+                                                    style = MaterialTheme.typography.labelMedium.copy(
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = TextPrimary
+                                                    )
+                                                )
+                                            }
+
+                                            Spacer(modifier = Modifier.height(4.dp))
+
+                                            Text(
+                                                text = "${String.format(Locale.US, "%,.2f", trade.quantity)} ks @ ${trade.price.toCurrencyString(tradeCurr)}" +
+                                                        if (trade.commission > 0) " (poplatok: ${trade.commission.toCurrencyString(tradeCurr)})" else "",
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    color = TextSecondary,
+                                                    fontSize = 12.sp
+                                                )
+                                            )
+                                        }
+
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Text(
+                                                text = trade.totalAmount.toCurrencyString(tradeCurr),
+                                                style = MaterialTheme.typography.titleSmall.copy(
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TextPrimary
+                                                )
+                                            )
+
+                                            IconButton(
+                                                onClick = { onEditTradeClick(position, trade) },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Edit,
+                                                    contentDescription = "Upraviť transakciu",
+                                                    tint = Color(0xFF64748B),
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+
+                                            IconButton(
+                                                onClick = { onDeleteTradeClick(position, trade) },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Delete,
+                                                    contentDescription = "Odstrániť transakciu",
+                                                    tint = Color(0xFFEF4444),
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Footer
+                Button(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = InputFieldBg),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Zavrieť",
+                        color = TextPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+    }
 }
 

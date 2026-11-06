@@ -99,6 +99,9 @@ class PortfolioViewModel(
         val history = generatePortfolioHistory(data, state.selectedTimeRange)
 
         _uiState.update { currentState ->
+            val updatedTradesPosition = currentState.tradesDialogPosition?.let { currentPos ->
+                data.positions.find { it.id == currentPos.id } ?: currentPos
+            }
             currentState.copy(
                 isLoading = false,
                 isRefreshing = false,
@@ -106,6 +109,7 @@ class PortfolioViewModel(
                 filteredPositions = filtered,
                 sectorBreakdown = sectors,
                 portfolioHistoryData = history,
+                tradesDialogPosition = updatedTradesPosition,
                 errorMessage = null,
                 isMockMode = data.isMockData
             )
@@ -436,6 +440,20 @@ class PortfolioViewModel(
      */
     fun onDismissDeleteTradeDialog() {
         _uiState.update { it.copy(deleteTradePosition = null, deleteTrade = null) }
+    }
+
+    /**
+     * Opens overlay dialog to view all trades for a specific position.
+     */
+    fun onOpenTradesDialog(position: Position) {
+        _uiState.update { it.copy(tradesDialogPosition = position) }
+    }
+
+    /**
+     * Dismisses the trades overlay dialog.
+     */
+    fun onDismissTradesDialog() {
+        _uiState.update { it.copy(tradesDialogPosition = null) }
     }
 
     /**

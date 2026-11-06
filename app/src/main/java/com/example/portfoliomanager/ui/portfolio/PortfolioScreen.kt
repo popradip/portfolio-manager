@@ -62,6 +62,8 @@ fun PortfolioScreen(
         onRefreshData = { viewModel.refreshPortfolioData(forceRefresh = true) },
         onBottomNavTabSelected = viewModel::onBottomNavTabSelected,
         onTimeRangeSelected = viewModel::onTimeRangeSelected,
+        onOpenTradesDialog = viewModel::onOpenTradesDialog,
+        onDismissTradesDialog = viewModel::onDismissTradesDialog,
         onOpenAddTradeDialog = viewModel::onOpenAddTradeDialog,
         onDismissAddTradeDialog = viewModel::onDismissAddTradeDialog,
         onAddManualTrade = viewModel::addManualTrade,
@@ -98,6 +100,8 @@ fun PortfolioScreenContent(
     onRefreshData: () -> Unit = {},
     onBottomNavTabSelected: (BottomNavTab) -> Unit = {},
     onTimeRangeSelected: (PortfolioTimeRange) -> Unit = {},
+    onOpenTradesDialog: (com.example.portfoliomanager.data.model.Position) -> Unit = {},
+    onDismissTradesDialog: () -> Unit = {},
     onOpenAddTradeDialog: (com.example.portfoliomanager.data.model.Position) -> Unit = {},
     onDismissAddTradeDialog: () -> Unit = {},
     onAddManualTrade: (positionId: String, quantity: Double, price: Double, date: String, commission: Double, buySell: String) -> Unit = { _, _, _, _, _, _ -> },
@@ -249,6 +253,7 @@ fun PortfolioScreenContent(
                                             position = position,
                                             isExpanded = isExpanded,
                                             onToggleExpand = { onTogglePositionExpanded(position.id) },
+                                            onViewTradesClick = { onOpenTradesDialog(position) },
                                             onAddTradeClick = { onOpenAddTradeDialog(position) },
                                             onEditTickerClick = { onOpenEditTickerDialog(position) },
                                             onEditTradeClick = { trade -> onOpenEditTradeDialog(position, trade) },
@@ -261,6 +266,17 @@ fun PortfolioScreenContent(
                     }
                 }
             }
+
+            // Position Trades Overlay Dialog
+            PositionTradesDialog(
+                position = uiState.tradesDialogPosition?.let { currentPos ->
+                    portfolioData.positions.find { it.id == currentPos.id } ?: currentPos
+                },
+                onDismiss = onDismissTradesDialog,
+                onAddTradeClick = { pos -> onOpenAddTradeDialog(pos) },
+                onEditTradeClick = { pos, trade -> onOpenEditTradeDialog(pos, trade) },
+                onDeleteTradeClick = { pos, trade -> onOpenDeleteTradeDialog(pos, trade) }
+            )
 
             // CSV Import Modal Dialog
             IbkrSettingsDialog(
