@@ -236,6 +236,11 @@ class MarketDataRepositoryImpl(
 
         ratesMap[cleanDate]?.let { return it }
 
+        val lastDate = if (ratesMap is java.util.NavigableMap) ratesMap.lastKey() else ratesMap.keys.maxOrNull()
+        if (lastDate != null && cleanDate >= lastDate && fallbackRate > 0.0) {
+            return fallbackRate
+        }
+
         if (ratesMap is java.util.NavigableMap) {
             val floorEntry = ratesMap.floorEntry(cleanDate)
             if (floorEntry != null) return floorEntry.value
@@ -421,21 +426,24 @@ class MarketDataRepositoryImpl(
             calendar.add(java.util.Calendar.DAY_OF_YEAR, dayStep)
         }
 
-        // Adjust last point value to match current actual netLiquidation if available
+        // Scale history points so that the last point matches actual netLiquidation smoothly without discontinuity on weekends
         val currentNetLiq = portfolioData.accountSummary.netLiquidation
-        if (currentNetLiq > 0 && points.isNotEmpty()) {
-            val last = points.last()
-            points[points.size - 1] = last.copy(value = currentNetLiq)
+        val lastCalcValue = points.lastOrNull()?.value ?: 0.0
+        val finalPoints = if (currentNetLiq > 0.0 && lastCalcValue > 0.0) {
+            val scaleFactor = currentNetLiq / lastCalcValue
+            points.map { it.copy(value = it.value * scaleFactor) }
+        } else {
+            points
         }
 
-        val startValue = points.firstOrNull()?.value ?: 0.0
-        val endValue = points.lastOrNull()?.value ?: 0.0
+        val startValue = finalPoints.firstOrNull()?.value ?: 0.0
+        val endValue = finalPoints.lastOrNull()?.value ?: 0.0
         val changeAmount = endValue - startValue
         val changePercentage = if (startValue > 0) (changeAmount / startValue) * 100.0 else 0.0
 
         PortfolioHistoryData(
             timeRange = timeRange,
-            points = points,
+            points = finalPoints,
             startValue = startValue,
             endValue = endValue,
             changeAmount = changeAmount,
@@ -452,6 +460,11 @@ class MarketDataRepositoryImpl(
         if (cleanDate.length < 10) return fallbackPrice
 
         pricesMap[cleanDate]?.let { return it }
+
+        val lastDate = if (pricesMap is java.util.NavigableMap) pricesMap.lastKey() else pricesMap.keys.maxOrNull()
+        if (lastDate != null && cleanDate >= lastDate && fallbackPrice > 0.0) {
+            return fallbackPrice
+        }
 
         if (pricesMap is java.util.NavigableMap) {
             val floorEntry = pricesMap.floorEntry(cleanDate)
