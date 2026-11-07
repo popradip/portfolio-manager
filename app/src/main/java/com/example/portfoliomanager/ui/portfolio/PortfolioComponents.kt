@@ -114,6 +114,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.portfoliomanager.data.model.AccountSummary
 import com.example.portfoliomanager.data.model.Balances
+import com.example.portfoliomanager.data.model.CurrentWeekPerformance
 import com.example.portfoliomanager.data.model.GeographyAllocation
 import com.example.portfoliomanager.data.model.MarginRequirements
 import com.example.portfoliomanager.data.model.PortfolioHistoryData
@@ -121,6 +122,7 @@ import com.example.portfoliomanager.data.model.PortfolioHistoryPoint
 import com.example.portfoliomanager.data.model.PortfolioTimeRange
 import com.example.portfoliomanager.data.model.Position
 import com.example.portfoliomanager.data.model.SectorAllocation
+import com.example.portfoliomanager.data.model.WeeklyDayPerformance
 import com.example.portfoliomanager.ui.theme.ActiveLimePill
 import com.example.portfoliomanager.ui.theme.ActiveLimePillText
 import com.example.portfoliomanager.ui.theme.CardBackground
@@ -318,6 +320,7 @@ fun SparklineCanvas(
 @Composable
 fun AccountSummaryCard(
     accountSummary: AccountSummary?,
+    currentWeekPerformance: CurrentWeekPerformance? = null,
     onImportClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -435,6 +438,131 @@ fun AccountSummaryCard(
                             )
                         )
                     }
+                }
+            }
+
+            if (currentWeekPerformance != null && currentWeekPerformance.days.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(14.dp))
+                CurrentWeekMiniChart(
+                    performance = currentWeekPerformance,
+                    currency = currency
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun CurrentWeekMiniChart(
+    performance: CurrentWeekPerformance,
+    currency: String = "EUR",
+    modifier: Modifier = Modifier
+) {
+    var selectedDay by remember { mutableStateOf<WeeklyDayPerformance?>(null) }
+    val days = performance.days
+
+    val activeDays = days.filter { it.hasData }
+    val maxAbsPnl = activeDays.maxOfOrNull { kotlin.math.abs(it.dailyPnl) }?.takeIf { it > 0 } ?: 1.0
+
+    Column(
+        modifier = modifier.fillMaxWidth()
+    ) {
+        // Week Bars Row (All 7 days, bars rendered only for active/past days)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.Bottom
+        ) {
+            days.forEach { day ->
+                val isSelected = (selectedDay == day)
+                val isPositive = day.dailyPnl >= 0
+                val barColor = if (isPositive) PositiveGreen else NegativeRed
+                val absPnl = kotlin.math.abs(day.dailyPnl)
+                val heightFraction = (absPnl / maxAbsPnl).toFloat().coerceIn(0.25f, 1.0f)
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(enabled = day.hasData) {
+                            selectedDay = if (isSelected) null else day
+                        }
+                        .padding(vertical = 2.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .height(36.dp)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        if (day.hasData) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.40f)
+                                    .fillMaxHeight(heightFraction)
+                                    .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                    .background(
+                                        if (day.isToday) barColor else barColor.copy(alpha = 0.65f)
+                                    )
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = day.dayLabel,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = if (day.isToday || isSelected) FontWeight.Bold else FontWeight.Medium,
+                            fontSize = 11.sp,
+                            color = if (day.isToday) MaterialTheme.colorScheme.primary
+                            else if (!day.hasData) TextSecondary.copy(alpha = 0.35f)
+                            else if (isSelected) TextPrimary
+                            else TextSecondary
+                        )
+                    )
+
+                    if (day.isToday) {
+                        Box(
+                            modifier = Modifier
+                                .size(4.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Detail info for selected day if clicked
+        if (selectedDay != null && selectedDay!!.hasData) {
+            val d = selectedDay!!
+            val isDayPos = d.dailyPnl >= 0
+            Spacer(modifier = Modifier.height(6.dp))
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFFF8FAFC),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Denný výsledok (${d.dayLabel}):",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Medium,
+                            color = TextSecondary
+                        )
+                    )
+                    Text(
+                        text = "${d.dailyPnl.toSignedCurrencyString(currency)} (${d.dailyPnlPercentage.toPercentageString()})",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDayPos) PositiveGreen else NegativeRed
+                        )
+                    )
                 }
             }
         }

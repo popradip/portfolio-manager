@@ -111,6 +111,22 @@ data class PortfolioHistoryPoint(
     val value: Double
 )
 
+data class WeeklyDayPerformance(
+    val dayLabel: String,
+    val dayNumber: Int,
+    val value: Double,
+    val dailyPnl: Double,
+    val dailyPnlPercentage: Double,
+    val isToday: Boolean = false,
+    val hasData: Boolean = true
+)
+
+data class CurrentWeekPerformance(
+    val days: List<WeeklyDayPerformance>,
+    val totalWeekPnl: Double,
+    val totalWeekPnlPercentage: Double
+)
+
 data class PortfolioHistoryData(
     val timeRange: PortfolioTimeRange,
     val points: List<PortfolioHistoryPoint>,

@@ -1,5 +1,6 @@
 package com.example.portfoliomanager.ui.portfolio
 
+import com.example.portfoliomanager.data.model.CurrentWeekPerformance
 import com.example.portfoliomanager.data.model.PortfolioData
 import com.example.portfoliomanager.data.model.PortfolioHistoryData
 import com.example.portfoliomanager.data.model.PortfolioTimeRange
@@ -59,6 +60,7 @@ data class PortfolioUiState(
     val selectedBottomNavTab: BottomNavTab = BottomNavTab.HOME,
     val selectedTimeRange: PortfolioTimeRange = PortfolioTimeRange.ONE_YEAR,
     val portfolioHistoryData: PortfolioHistoryData? = null,
+    val currentWeekPerformance: CurrentWeekPerformance? = null,
     val isBalancesExpanded: Boolean = false,
     val isMarginExpanded: Boolean = false,
     val isBreakdownExpanded: Boolean = false,

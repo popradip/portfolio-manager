@@ -3,12 +3,14 @@ package com.example.portfoliomanager.ui.portfolio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.portfoliomanager.data.model.AssetCategory
+import com.example.portfoliomanager.data.model.CurrentWeekPerformance
 import com.example.portfoliomanager.data.model.PortfolioData
 import com.example.portfoliomanager.data.model.PortfolioHistoryData
 import com.example.portfoliomanager.data.model.PortfolioHistoryPoint
 import com.example.portfoliomanager.data.model.PortfolioTimeRange
 import com.example.portfoliomanager.data.model.Position
 import com.example.portfoliomanager.data.model.SectorAllocation
+import com.example.portfoliomanager.data.model.WeeklyDayPerformance
 import com.example.portfoliomanager.data.repository.PortfolioRepository
 import com.example.portfoliomanager.data.repository.PortfolioRepositoryImpl
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -97,6 +99,8 @@ class PortfolioViewModel(
             fallbackSectors = data.sectorAllocations
         )
         val history = generatePortfolioHistory(data, state.selectedTimeRange)
+        val monthlyHistory = if (state.selectedTimeRange == PortfolioTimeRange.ONE_MONTH) history else generatePortfolioHistory(data, PortfolioTimeRange.ONE_MONTH)
+        val currentWeek = generateCurrentWeekPerformance(data, monthlyHistory)
 
         _uiState.update { currentState ->
             val updatedTradesPosition = currentState.tradesDialogPosition?.let { currentPos ->
@@ -109,6 +113,7 @@ class PortfolioViewModel(
                 filteredPositions = filtered,
                 sectorBreakdown = sectors,
                 portfolioHistoryData = history,
+                currentWeekPerformance = currentWeek,
                 tradesDialogPosition = updatedTradesPosition,
                 errorMessage = null,
                 isMockMode = data.isMockData
@@ -118,7 +123,9 @@ class PortfolioViewModel(
         viewModelScope.launch {
             try {
                 val realHistory = repository.getHistoricalPortfolioData(data, state.selectedTimeRange)
-                _uiState.update { it.copy(portfolioHistoryData = realHistory) }
+                val realMonthlyHistory = if (state.selectedTimeRange == PortfolioTimeRange.ONE_MONTH) realHistory else repository.getHistoricalPortfolioData(data, PortfolioTimeRange.ONE_MONTH)
+                val realWeek = generateCurrentWeekPerformance(data, realMonthlyHistory)
+                _uiState.update { it.copy(portfolioHistoryData = realHistory, currentWeekPerformance = realWeek) }
             } catch (_: Exception) {
                 // Keep instant fallback history if error occurs
             }
@@ -974,6 +981,80 @@ class PortfolioViewModel(
                 colorHex = colorHex
             )
         }.sortedByDescending { it.value }
+    }
+
+    private fun generateCurrentWeekPerformance(
+        data: PortfolioData,
+        monthlyHistoryData: PortfolioHistoryData? = null
+    ): CurrentWeekPerformance {
+        val history = monthlyHistoryData ?: generatePortfolioHistory(data, PortfolioTimeRange.ONE_MONTH)
+        val points = history.points
+
+        val currentValue = data.accountSummary.netLiquidation.takeIf { it > 0 } ?: 10000.0
+        val todayPnl = data.accountSummary.dailyPnl
+
+        val calendar = java.util.Calendar.getInstance()
+        val dayOfWeekJava = calendar.get(java.util.Calendar.DAY_OF_WEEK)
+        val currentDayOfWeek = if (dayOfWeekJava == java.util.Calendar.SUNDAY) 7 else dayOfWeekJava - 1
+
+        val dayNames = listOf("Po", "Ut", "St", "Št", "Pi", "So", "Ne")
+        val days = mutableListOf<WeeklyDayPerformance>()
+        val lastIdx = points.size - 1
+
+        for (d in 1..7) {
+            val dayLabel = dayNames[d - 1]
+            val isToday = (d == currentDayOfWeek)
+            val hasData = (d <= currentDayOfWeek)
+
+            if (hasData) {
+                val daysAgo = currentDayOfWeek - d
+                val pointIdx = lastIdx - daysAgo
+                val pointVal = if (pointIdx in points.indices) points[pointIdx].value else currentValue
+
+                val prevVal = if (pointIdx - 1 in points.indices) points[pointIdx - 1].value else pointVal
+                val pnl = if (isToday) todayPnl else (pointVal - prevVal)
+                val pnlPct = if (prevVal > 0) (pnl / prevVal) * 100.0 else 0.0
+
+                days.add(
+                    WeeklyDayPerformance(
+                        dayLabel = dayLabel,
+                        dayNumber = d,
+                        value = pointVal,
+                        dailyPnl = pnl,
+                        dailyPnlPercentage = pnlPct,
+                        isToday = isToday,
+                        hasData = true
+                    )
+                )
+            } else {
+                days.add(
+                    WeeklyDayPerformance(
+                        dayLabel = dayLabel,
+                        dayNumber = d,
+                        value = 0.0,
+                        dailyPnl = 0.0,
+                        dailyPnlPercentage = 0.0,
+                        isToday = false,
+                        hasData = false
+                    )
+                )
+            }
+        }
+
+        val pastDays = days.filter { it.hasData }
+        val weekStartVal = if (pastDays.isNotEmpty()) {
+            val firstDay = pastDays.first()
+            firstDay.value - firstDay.dailyPnl
+        } else currentValue
+
+        val totalWeekPnl = currentValue - weekStartVal
+        val totalWeekPnlPct = if (weekStartVal > 0) (totalWeekPnl / weekStartVal) * 100.0 else 0.0
+
+        return CurrentWeekPerformance(
+            days = days,
+            totalWeekPnl = totalWeekPnl,
+            totalWeekPnlPercentage = totalWeekPnlPct
+        )
     }
 }
 

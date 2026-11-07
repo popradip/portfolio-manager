@@ -181,6 +181,15 @@ fun PortfolioScreenContent(
 
                         when (uiState.selectedBottomNavTab) {
                             BottomNavTab.HOME -> {
+                                // Account Summary & Net Liquidity Card (with Current Week Mini Chart)
+                                item(key = "home_account_summary") {
+                                    AccountSummaryCard(
+                                        accountSummary = portfolioData.accountSummary,
+                                        currentWeekPerformance = uiState.currentWeekPerformance,
+                                        onImportClick = { onToggleSettingsDialog(true) }
+                                    )
+                                }
+
                                 // Interactive Portfolio Evolution Chart Card
                                 item {
                                     PortfolioEvolutionChartCard(
@@ -220,14 +229,6 @@ fun PortfolioScreenContent(
 
                             BottomNavTab.ASSETS -> {
                                 val displayPositions = uiState.filteredPositions
-
-                                // Account Summary & Net Liquidity Card
-                                item(key = "assets_account_summary") {
-                                    AccountSummaryCard(
-                                        accountSummary = portfolioData.accountSummary,
-                                        onImportClick = { onToggleSettingsDialog(true) }
-                                    )
-                                }
 
                                 item(key = "assets_header") {
                                     YourAssetsHeader(
