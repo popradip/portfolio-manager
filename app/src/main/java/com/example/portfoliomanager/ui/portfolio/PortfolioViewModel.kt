@@ -921,9 +921,6 @@ class PortfolioViewModel(
             CategoryFilter.ALL -> true
             CategoryFilter.STOCKS -> position.assetCategory == AssetCategory.STK
             CategoryFilter.ETFS -> position.assetCategory == AssetCategory.ETF
-            CategoryFilter.BONDS -> position.assetCategory == AssetCategory.BOND
-            CategoryFilter.CASH -> position.assetCategory == AssetCategory.CASH
-            CategoryFilter.OTHER -> position.assetCategory == AssetCategory.OTHER
         }
     }
 
@@ -991,10 +988,10 @@ class PortfolioViewModel(
         val points = history.points
 
         val currentValue = data.accountSummary.netLiquidation.takeIf { it > 0 } ?: 10000.0
-        val todayPnl = data.accountSummary.dailyPnl
 
         val calendar = java.util.Calendar.getInstance()
         val dayOfWeekJava = calendar.get(java.util.Calendar.DAY_OF_WEEK)
+        // 1=Monday .. 7=Sunday
         val currentDayOfWeek = if (dayOfWeekJava == java.util.Calendar.SUNDAY) 7 else dayOfWeekJava - 1
 
         val dayNames = listOf("Po", "Ut", "St", "Št", "Pi", "So", "Ne")
@@ -1006,13 +1003,13 @@ class PortfolioViewModel(
             val isToday = (d == currentDayOfWeek)
             val hasData = (d <= currentDayOfWeek)
 
-            if (hasData) {
+            if (hasData && points.isNotEmpty()) {
                 val daysAgo = currentDayOfWeek - d
-                val pointIdx = lastIdx - daysAgo
-                val pointVal = if (pointIdx in points.indices) points[pointIdx].value else currentValue
+                val pointIdx = (lastIdx - daysAgo).coerceIn(0, lastIdx)
+                val pointVal = points[pointIdx].value
 
-                val prevVal = if (pointIdx - 1 in points.indices) points[pointIdx - 1].value else pointVal
-                val pnl = if (isToday) todayPnl else (pointVal - prevVal)
+                val prevVal = if (pointIdx > 0) points[pointIdx - 1].value else pointVal
+                val pnl = pointVal - prevVal
                 val pnlPct = if (prevVal > 0) (pnl / prevVal) * 100.0 else 0.0
 
                 days.add(
@@ -1034,7 +1031,7 @@ class PortfolioViewModel(
                         value = 0.0,
                         dailyPnl = 0.0,
                         dailyPnlPercentage = 0.0,
-                        isToday = false,
+                        isToday = isToday && hasData,
                         hasData = false
                     )
                 )

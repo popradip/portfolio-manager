@@ -190,8 +190,17 @@ fun PortfolioScreenContent(
                                     )
                                 }
 
+                                // Top Daily P&L Movers Card
+                                item(key = "home_top_movers") {
+                                    TopDailyPnlMoversCard(
+                                        positions = portfolioData.positions,
+                                        currency = portfolioData.accountSummary.currency,
+                                        onPositionClick = onPositionClick
+                                    )
+                                }
+
                                 // Interactive Portfolio Evolution Chart Card
-                                item {
+                                item(key = "home_chart") {
                                     PortfolioEvolutionChartCard(
                                         historyData = uiState.portfolioHistoryData,
                                         selectedTimeRange = uiState.selectedTimeRange,

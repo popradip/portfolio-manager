@@ -398,10 +398,19 @@ fun AccountSummaryCard(
             )
 
             val netLiquidation = accountSummary?.netLiquidation ?: 0.0
-            val dailyPnl = accountSummary?.dailyPnl ?: 0.0
-            val dailyPnlPct = accountSummary?.dailyPnlPercentage ?: 0.0
             val currency = accountSummary?.currency ?: "EUR"
-            val isPositive = dailyPnl >= 0
+
+            val defaultSelectedDay = remember(currentWeekPerformance) {
+                currentWeekPerformance?.days?.find { it.isToday }
+                    ?: currentWeekPerformance?.days?.lastOrNull { it.hasData }
+            }
+            var selectedDay by remember(currentWeekPerformance) { mutableStateOf(defaultSelectedDay) }
+
+            val displayedDailyPnl = selectedDay?.takeIf { it.hasData }?.dailyPnl
+                ?: accountSummary?.dailyPnl ?: 0.0
+            val displayedDailyPnlPct = selectedDay?.takeIf { it.hasData }?.dailyPnlPercentage
+                ?: accountSummary?.dailyPnlPercentage ?: 0.0
+            val isPositive = displayedDailyPnl >= 0
 
             Column {
                 Text(
@@ -431,7 +440,7 @@ fun AccountSummaryCard(
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = "${dailyPnl.toSignedCurrencyString(currency)} (${dailyPnlPct.toPercentageString()})",
+                            text = "${displayedDailyPnl.toSignedCurrencyString(currency)} (${displayedDailyPnlPct.toPercentageString()})",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = if (isPositive) PositiveGreen else NegativeRed
@@ -445,7 +454,8 @@ fun AccountSummaryCard(
                 Spacer(modifier = Modifier.height(14.dp))
                 CurrentWeekMiniChart(
                     performance = currentWeekPerformance,
-                    currency = currency
+                    selectedDay = selectedDay,
+                    onDaySelected = { selectedDay = it }
                 )
             }
         }
@@ -455,10 +465,10 @@ fun AccountSummaryCard(
 @Composable
 fun CurrentWeekMiniChart(
     performance: CurrentWeekPerformance,
-    currency: String = "EUR",
+    selectedDay: WeeklyDayPerformance?,
+    onDaySelected: (WeeklyDayPerformance) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedDay by remember { mutableStateOf<WeeklyDayPerformance?>(null) }
     val days = performance.days
 
     val activeDays = days.filter { it.hasData }
@@ -485,7 +495,7 @@ fun CurrentWeekMiniChart(
                     modifier = Modifier
                         .weight(1f)
                         .clickable(enabled = day.hasData) {
-                            selectedDay = if (isSelected) null else day
+                            onDaySelected(day)
                         }
                         .padding(vertical = 2.dp)
                 ) {
@@ -498,11 +508,11 @@ fun CurrentWeekMiniChart(
                         if (day.hasData) {
                             Box(
                                 modifier = Modifier
-                                    .fillMaxWidth(0.40f)
+                                    .fillMaxWidth(if (isSelected) 0.52f else 0.38f)
                                     .fillMaxHeight(heightFraction)
                                     .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
                                     .background(
-                                        if (day.isToday) barColor else barColor.copy(alpha = 0.65f)
+                                        if (isSelected) barColor else barColor.copy(alpha = 0.45f)
                                     )
                             )
                         }
@@ -515,9 +525,8 @@ fun CurrentWeekMiniChart(
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontWeight = if (day.isToday || isSelected) FontWeight.Bold else FontWeight.Medium,
                             fontSize = 11.sp,
-                            color = if (day.isToday) MaterialTheme.colorScheme.primary
+                            color = if (isSelected) MaterialTheme.colorScheme.primary
                             else if (!day.hasData) TextSecondary.copy(alpha = 0.35f)
-                            else if (isSelected) TextPrimary
                             else TextSecondary
                         )
                     )
@@ -530,39 +539,6 @@ fun CurrentWeekMiniChart(
                                 .background(MaterialTheme.colorScheme.primary)
                         )
                     }
-                }
-            }
-        }
-
-        // Detail info for selected day if clicked
-        if (selectedDay != null && selectedDay!!.hasData) {
-            val d = selectedDay!!
-            val isDayPos = d.dailyPnl >= 0
-            Spacer(modifier = Modifier.height(6.dp))
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = Color(0xFFF8FAFC),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Denný výsledok (${d.dayLabel}):",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Medium,
-                            color = TextSecondary
-                        )
-                    )
-                    Text(
-                        text = "${d.dailyPnl.toSignedCurrencyString(currency)} (${d.dailyPnlPercentage.toPercentageString()})",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = if (isDayPos) PositiveGreen else NegativeRed
-                        )
-                    )
                 }
             }
         }
@@ -1034,18 +1010,39 @@ fun PortfolioEvolutionChartCard(
                     )
                 }
             }
+        }
+    }
+}
 
-            if (positions.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = CardBorderColor, thickness = 1.dp)
-                Spacer(modifier = Modifier.height(14.dp))
+// --- Top Daily P&L Movers Card ---
 
-                TopDailyPnlMoversSection(
-                    positions = positions,
-                    currency = currency,
-                    onPositionClick = onPositionClick
-                )
-            }
+@Composable
+fun TopDailyPnlMoversCard(
+    positions: List<Position>,
+    currency: String = "EUR",
+    onPositionClick: (String) -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    if (positions.isEmpty()) return
+
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp)
+        ) {
+            TopDailyPnlMoversSection(
+                positions = positions,
+                currency = currency,
+                onPositionClick = onPositionClick
+            )
         }
     }
 }

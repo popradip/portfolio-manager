@@ -426,7 +426,7 @@ class MarketDataRepositoryImpl(
             calendar.add(java.util.Calendar.DAY_OF_YEAR, dayStep)
         }
 
-        // Scale history points so that the last point matches actual netLiquidation smoothly without discontinuity on weekends
+        // Scale history points so that the last point matches actual netLiquidation smoothly without discontinuity
         val currentNetLiq = portfolioData.accountSummary.netLiquidation
         val lastCalcValue = points.lastOrNull()?.value ?: 0.0
         val finalPoints = if (currentNetLiq > 0.0 && lastCalcValue > 0.0) {

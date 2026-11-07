@@ -11,10 +11,7 @@ import com.example.portfoliomanager.data.model.Trade
 enum class CategoryFilter(val displayName: String) {
     ALL("Všetky"),
     STOCKS("Akcie"),
-    ETFS("ETF"),
-    BONDS("Dlhopisy"),
-    CASH("Hotovosť"),
-    OTHER("Ostatné")
+    ETFS("ETF")
 }
 
 enum class PositionSortOption(val displayName: String) {
