@@ -73,6 +73,13 @@ class FakeYahooFinanceApiClient : YahooFinanceApiClient() {
             )
         } else emptyMap()
     }
+
+    override suspend fun fetchHistoricalPrices(symbol: String, range: String): Map<String, Double> {
+        return mapOf(
+            "2024-01-01" to 150.0,
+            "2024-02-01" to 160.0
+        )
+    }
 }
 
 class MarketDataRepositoryTest {
@@ -145,5 +152,27 @@ class MarketDataRepositoryTest {
         // Historical cost basis = 1.0 * 260.0 * 0.95 (historical rate on 2023-01-15) = 247.0 EUR
         // Total PnL in EUR = 234.0 - 247.0 = -13.0 EUR
         assertEquals(-13.0, mcd!!.totalPnl, 0.01)
+    }
+
+    @Test
+    fun fetchHistoricalPortfolioData_calculatesHistoricalPoints() = runTest {
+        val fakeClient = FakeYahooFinanceApiClient()
+        val repository = MarketDataRepositoryImpl(yahooApiClient = fakeClient)
+
+        val testPortfolio = PortfolioData(
+            accountSummary = AccountSummary("U123", "Test Account", "EUR", 1000.0, 100.0, 100.0, 0.0, 1000.0, 0.0, 0.0, 0.0, 0.0),
+            balances = Balances(100.0, 100.0, 0.0, 0.0, 0.0, 1000.0),
+            marginSummary = MarginRequirements(0.0, 0.0, 0.0, 1000.0, 1000.0, 0.0),
+            positions = listOf(
+                Position("1", "VWCE", "Vanguard ETF", AssetCategory.ETF, 5.0, 160.0, 165.0, 825.0, 0.0, 25.0, 3.125, "Broad Market", "Ireland")
+            ),
+            sectorAllocations = emptyList(),
+            geographyAllocations = emptyList()
+        )
+
+        val history = repository.fetchHistoricalPortfolioData(testPortfolio, com.example.portfoliomanager.data.model.PortfolioTimeRange.ONE_MONTH)
+        assertNotNull(history)
+        assertEquals(30, history.points.size)
+        assertTrue(history.points.all { it.value > 0 })
     }
 }

@@ -7,6 +7,8 @@ import com.example.portfoliomanager.data.model.Balances
 import com.example.portfoliomanager.data.model.GeographyAllocation
 import com.example.portfoliomanager.data.model.MarginRequirements
 import com.example.portfoliomanager.data.model.PortfolioData
+import com.example.portfoliomanager.data.model.PortfolioHistoryData
+import com.example.portfoliomanager.data.model.PortfolioTimeRange
 import com.example.portfoliomanager.data.model.Position
 import com.example.portfoliomanager.data.model.SectorAllocation
 import com.example.portfoliomanager.data.model.Trade
@@ -94,6 +96,11 @@ interface PortfolioRepository {
      * Saves or removes an alternative ticker for a position symbol and refreshes portfolio data.
      */
     suspend fun saveTickerOverride(originalSymbol: String, alternativeTicker: String): Result<PortfolioData>
+
+    /**
+     * Calculates real historical portfolio values over time for the specified [timeRange].
+     */
+    suspend fun getHistoricalPortfolioData(portfolioData: PortfolioData, timeRange: PortfolioTimeRange): PortfolioHistoryData
 }
 
 class PortfolioRepositoryImpl(
@@ -868,5 +875,12 @@ class PortfolioRepositoryImpl(
             AppLogger.e("PortfolioRepository", "Failed to deserialize deleted trades JSON: ${e.message}", e)
         }
         return set
+    }
+
+    override suspend fun getHistoricalPortfolioData(
+        portfolioData: PortfolioData,
+        timeRange: PortfolioTimeRange
+    ): PortfolioHistoryData {
+        return marketDataRepository.fetchHistoricalPortfolioData(portfolioData, timeRange)
     }
 }

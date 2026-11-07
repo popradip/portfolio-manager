@@ -2,6 +2,9 @@ package com.example.portfoliomanager.data.repository
 
 import com.example.portfoliomanager.data.model.GeographyAllocation
 import com.example.portfoliomanager.data.model.PortfolioData
+import com.example.portfoliomanager.data.model.PortfolioHistoryData
+import com.example.portfoliomanager.data.model.PortfolioHistoryPoint
+import com.example.portfoliomanager.data.model.PortfolioTimeRange
 import com.example.portfoliomanager.data.model.Position
 import com.example.portfoliomanager.data.model.SectorAllocation
 import com.example.portfoliomanager.data.remote.AppLogger
@@ -15,6 +18,11 @@ interface MarketDataRepository {
      * Enriches the provided [PortfolioData] with live Yahoo Finance market prices, FX exchange rates, sparklines, and updated P&L metrics.
      */
     suspend fun enrichPortfolioWithLivePrices(portfolioData: PortfolioData): PortfolioData
+
+    /**
+     * Calculates real historical portfolio values over time for the specified [timeRange].
+     */
+    suspend fun fetchHistoricalPortfolioData(portfolioData: PortfolioData, timeRange: PortfolioTimeRange): PortfolioHistoryData
 }
 
 class MarketDataRepositoryImpl(
@@ -303,5 +311,160 @@ class MarketDataRepositoryImpl(
             val pct = (value / totalVal) * 100.0
             GeographyAllocation(country, value, pct)
         }.sortedByDescending { it.value }
+    }
+
+    override suspend fun fetchHistoricalPortfolioData(
+        portfolioData: PortfolioData,
+        timeRange: PortfolioTimeRange
+    ): PortfolioHistoryData = coroutineScope {
+        val targetCurrency = portfolioData.accountSummary.currency.ifBlank { "EUR" }.uppercase()
+        val positions = portfolioData.positions
+        val totalCash = portfolioData.accountSummary.totalCashValue.coerceAtLeast(0.0)
+
+        if (positions.isEmpty()) {
+            val currentValue = portfolioData.accountSummary.netLiquidation.takeIf { it > 0 } ?: 0.0
+            return@coroutineScope PortfolioHistoryData(
+                timeRange = timeRange,
+                points = emptyList(),
+                startValue = currentValue,
+                endValue = currentValue,
+                changeAmount = 0.0,
+                changePercentage = 0.0
+            )
+        }
+
+        // 1. Fetch historical prices for all distinct tickers in parallel
+        val distinctTickers = positions.map { it.effectiveTicker }.distinct()
+        val historicalPriceDeferreds = distinctTickers.map { ticker ->
+            async { ticker to yahooApiClient.fetchHistoricalPrices(ticker, "5y") }
+        }
+        val historicalPricesMap = historicalPriceDeferreds.awaitAll().toMap()
+
+        // 2. Fetch historical FX rates for all distinct position currencies in parallel
+        val distinctCurrencies = (positions.map { it.currency } + targetCurrency).distinct()
+        val historicalFxDeferreds = distinctCurrencies.filter { it != targetCurrency }.map { curr ->
+            async { curr to yahooApiClient.fetchHistoricalExchangeRates(curr, targetCurrency) }
+        }
+        val historicalFxMap = historicalFxDeferreds.awaitAll().toMap()
+
+        // 3. Determine time points (number of points and day steps)
+        val numPoints = when (timeRange) {
+            PortfolioTimeRange.ONE_MONTH -> 30
+            PortfolioTimeRange.THREE_MONTHS -> 30
+            PortfolioTimeRange.SIX_MONTHS -> 30
+            PortfolioTimeRange.ONE_YEAR -> 52
+            PortfolioTimeRange.YTD -> 40
+            PortfolioTimeRange.ALL -> 60
+        }
+
+        val dayStep = when (timeRange) {
+            PortfolioTimeRange.ONE_MONTH -> 1
+            PortfolioTimeRange.THREE_MONTHS -> 3
+            PortfolioTimeRange.SIX_MONTHS -> 6
+            PortfolioTimeRange.ONE_YEAR -> 7
+            PortfolioTimeRange.YTD -> 7
+            PortfolioTimeRange.ALL -> 14
+        }
+
+        val points = mutableListOf<PortfolioHistoryPoint>()
+        val calendar = java.util.Calendar.getInstance()
+        val skLocale = java.util.Locale.forLanguageTag("sk")
+        val dateFormat = when (timeRange) {
+            PortfolioTimeRange.ONE_MONTH, PortfolioTimeRange.THREE_MONTHS -> java.text.SimpleDateFormat("d. MMM", skLocale)
+            else -> java.text.SimpleDateFormat("MMM yyyy", skLocale)
+        }
+        val isoDateFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        isoDateFormat.timeZone = java.util.TimeZone.getTimeZone("UTC")
+
+        // Start calendar at (now - numPoints * dayStep)
+        calendar.add(java.util.Calendar.DAY_OF_YEAR, -((numPoints - 1) * dayStep))
+
+        for (i in 0 until numPoints) {
+            val dateStr = isoDateFormat.format(calendar.time)
+            var dayPositionsMarketValue = 0.0
+
+            for (pos in positions) {
+                // Determine active quantity at dateStr
+                val buyTrades = pos.trades.filter { it.buySell.equals("BUY", ignoreCase = true) }
+                val sellTrades = pos.trades.filter { it.buySell.equals("SELL", ignoreCase = true) }
+
+                val qtyAtDate = if (buyTrades.isNotEmpty() || sellTrades.isNotEmpty()) {
+                    val buysUpToDate = buyTrades.filter { it.date.trim().take(10) <= dateStr }.sumOf { it.quantity }
+                    val sellsUpToDate = sellTrades.filter { it.date.trim().take(10) <= dateStr }.sumOf { it.quantity }
+                    val netQty = buysUpToDate - sellsUpToDate
+                    if (netQty > 0) netQty else if (buysUpToDate == 0.0 && dateStr >= (pos.trades.firstOrNull()?.date?.trim()?.take(10) ?: "")) pos.quantity else 0.0
+                } else {
+                    pos.quantity
+                }
+
+                if (qtyAtDate > 0.0) {
+                    val priceMap = historicalPricesMap[pos.effectiveTicker] ?: emptyMap()
+                    val priceAtDate = getHistoricalPrice(priceMap, dateStr, if (pos.markPrice > 0) pos.markPrice else pos.costBasisPrice)
+
+                    val fxMap = historicalFxMap[pos.currency] ?: emptyMap()
+                    val fxAtDate = if (pos.currency == targetCurrency) 1.0 else getHistoricalFxRate(fxMap, dateStr, if (pos.fxRateToPortfolio > 0) pos.fxRateToPortfolio else 1.0)
+
+                    dayPositionsMarketValue += qtyAtDate * priceAtDate * fxAtDate
+                }
+            }
+
+            val dayTotalPortfolioValue = dayPositionsMarketValue + totalCash
+            val dateLabelStr = dateFormat.format(calendar.time)
+            points.add(
+                PortfolioHistoryPoint(
+                    timestamp = calendar.timeInMillis,
+                    dateLabel = dateLabelStr,
+                    value = dayTotalPortfolioValue
+                )
+            )
+
+            calendar.add(java.util.Calendar.DAY_OF_YEAR, dayStep)
+        }
+
+        // Adjust last point value to match current actual netLiquidation if available
+        val currentNetLiq = portfolioData.accountSummary.netLiquidation
+        if (currentNetLiq > 0 && points.isNotEmpty()) {
+            val last = points.last()
+            points[points.size - 1] = last.copy(value = currentNetLiq)
+        }
+
+        val startValue = points.firstOrNull()?.value ?: 0.0
+        val endValue = points.lastOrNull()?.value ?: 0.0
+        val changeAmount = endValue - startValue
+        val changePercentage = if (startValue > 0) (changeAmount / startValue) * 100.0 else 0.0
+
+        PortfolioHistoryData(
+            timeRange = timeRange,
+            points = points,
+            startValue = startValue,
+            endValue = endValue,
+            changeAmount = changeAmount,
+            changePercentage = changePercentage
+        )
+    }
+
+    private fun getHistoricalPrice(
+        pricesMap: Map<String, Double>,
+        dateStr: String,
+        fallbackPrice: Double
+    ): Double {
+        val cleanDate = dateStr.trim().take(10)
+        if (cleanDate.length < 10) return fallbackPrice
+
+        pricesMap[cleanDate]?.let { return it }
+
+        if (pricesMap is java.util.NavigableMap) {
+            val floorEntry = pricesMap.floorEntry(cleanDate)
+            if (floorEntry != null) return floorEntry.value
+        } else {
+            val previousDates = pricesMap.keys.filter { it <= cleanDate }
+            if (previousDates.isNotEmpty()) {
+                val maxDate = previousDates.maxOrNull()
+                if (maxDate != null) {
+                    pricesMap[maxDate]?.let { return it }
+                }
+            }
+        }
+        return fallbackPrice
     }
 }

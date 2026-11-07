@@ -487,4 +487,24 @@ private class FakePortfolioRepository(
         mockData = mockData.copy(positions = updatedPositions)
         return Result.success(mockData)
     }
+
+    override suspend fun getHistoricalPortfolioData(
+        portfolioData: PortfolioData,
+        timeRange: com.example.portfoliomanager.data.model.PortfolioTimeRange
+    ): com.example.portfoliomanager.data.model.PortfolioHistoryData {
+        val currentValue = portfolioData.accountSummary.netLiquidation.takeIf { it > 0 } ?: 10000.0
+        val totalPnl = portfolioData.accountSummary.totalPnl
+        val startValue = currentValue - totalPnl
+        return com.example.portfoliomanager.data.model.PortfolioHistoryData(
+            timeRange = timeRange,
+            points = listOf(
+                com.example.portfoliomanager.data.model.PortfolioHistoryPoint(0L, "Start", startValue),
+                com.example.portfoliomanager.data.model.PortfolioHistoryPoint(1L, "End", currentValue)
+            ),
+            startValue = startValue,
+            endValue = currentValue,
+            changeAmount = totalPnl,
+            changePercentage = if (startValue > 0) (totalPnl / startValue) * 100.0 else 0.0
+        )
+    }
 }

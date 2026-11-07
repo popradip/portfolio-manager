@@ -53,6 +53,7 @@ open class YahooFinanceApiClient(
     }
 
     private val historicalFxCache = mutableMapOf<String, Map<String, Double>>()
+    private val historicalPricesCache = mutableMapOf<String, Map<String, Double>>()
 
     /**
      * Fetches live exchange rate from Yahoo Finance (e.g., USDEUR=X).
@@ -129,6 +130,77 @@ open class YahooFinanceApiClient(
             AppLogger.e("YahooFinanceApiClient", "Failed to fetch historical exchange rates for $yahooPairSymbol: ${e.message}", e)
             emptyMap()
         }
+    }
+
+    /**
+     * Fetches daily historical close prices map (date "YYYY-MM-DD" -> close price) for a ticker symbol from Yahoo Finance.
+     */
+    open suspend fun fetchHistoricalPrices(symbol: String, range: String = "5y"): Map<String, Double> = withContext(Dispatchers.IO) {
+        val cleanSymbol = symbol.trim().uppercase()
+        if (cleanSymbol.isBlank()) return@withContext emptyMap()
+
+        synchronized(historicalPricesCache) {
+            historicalPricesCache[cleanSymbol]?.let { return@withContext it }
+        }
+
+        val candidates = getCandidateYahooSymbols(cleanSymbol)
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+
+        for (candidate in candidates) {
+            val url = "https://query1.finance.yahoo.com/v8/finance/chart/$candidate?interval=1d&range=$range"
+            AppLogger.d("YahooFinanceApiClient", "Fetching historical prices for $cleanSymbol ($candidate)...")
+            val request = Request.Builder().url(url).build()
+
+            try {
+                val response = okHttpClient.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    AppLogger.d("YahooFinanceApiClient", "HTTP ${response.code} for $candidate history")
+                    continue
+                }
+
+                val bodyString = response.body?.string() ?: continue
+                val jsonRoot = JSONObject(bodyString)
+                val chartObj = jsonRoot.optJSONObject("chart") ?: continue
+                val resultArr = chartObj.optJSONArray("result") ?: continue
+                if (resultArr.length() == 0) continue
+
+                val resultObj = resultArr.getJSONObject(0)
+                val metaObj = resultObj.optJSONObject("meta")
+                val currency = metaObj?.optString("currency", "USD")?.uppercase() ?: "USD"
+                val isPence = currency == "GBP" || currency == "GBX"
+
+                val timestampArr = resultObj.optJSONArray("timestamp") ?: continue
+                val indicatorsObj = resultObj.optJSONObject("indicators")
+                val quoteArr = indicatorsObj?.optJSONArray("quote")
+                val closeArr = quoteArr?.optJSONObject(0)?.optJSONArray("close") ?: continue
+
+                val pricesByDate = java.util.TreeMap<String, Double>()
+                for (i in 0 until timestampArr.length()) {
+                    if (!closeArr.isNull(i)) {
+                        val price = closeArr.optDouble(i, -1.0)
+                        val ts = timestampArr.optLong(i, 0L)
+                        if (price > 0.0 && ts > 0L) {
+                            val finalPrice = if (isPence) price / 100.0 else price
+                            val dateStr = sdf.format(java.util.Date(ts * 1000L))
+                            pricesByDate[dateStr] = finalPrice
+                        }
+                    }
+                }
+
+                if (pricesByDate.isNotEmpty()) {
+                    synchronized(historicalPricesCache) {
+                        historicalPricesCache[cleanSymbol] = pricesByDate
+                    }
+                    AppLogger.d("YahooFinanceApiClient", "Loaded ${pricesByDate.size} historical prices for $cleanSymbol ($candidate)")
+                    return@withContext pricesByDate
+                }
+            } catch (e: Exception) {
+                AppLogger.e("YahooFinanceApiClient", "Failed to fetch historical prices for $candidate: ${e.message}", e)
+            }
+        }
+
+        emptyMap()
     }
 
     private fun fetchChartDataForSymbol(originalSymbol: String, yahooSymbol: String): YahooMarketData? {

@@ -114,6 +114,15 @@ class PortfolioViewModel(
                 isMockMode = data.isMockData
             )
         }
+
+        viewModelScope.launch {
+            try {
+                val realHistory = repository.getHistoricalPortfolioData(data, state.selectedTimeRange)
+                _uiState.update { it.copy(portfolioHistoryData = realHistory) }
+            } catch (_: Exception) {
+                // Keep instant fallback history if error occurs
+            }
+        }
     }
 
     /**
@@ -716,8 +725,22 @@ class PortfolioViewModel(
             val history = data?.let { generatePortfolioHistory(it, range) }
             state.copy(
                 selectedTimeRange = range,
-                portfolioHistoryData = history
+                portfolioHistoryData = history ?: state.portfolioHistoryData
             )
+        }
+
+        val data = _uiState.value.portfolioData ?: return
+        viewModelScope.launch {
+            try {
+                val realHistory = repository.getHistoricalPortfolioData(data, range)
+                _uiState.update { state ->
+                    if (state.selectedTimeRange == range) {
+                        state.copy(portfolioHistoryData = realHistory)
+                    } else state
+                }
+            } catch (_: Exception) {
+                // Keep instant fallback history if error occurs
+            }
         }
     }
 
