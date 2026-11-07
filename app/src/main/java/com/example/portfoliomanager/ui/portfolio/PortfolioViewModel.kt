@@ -88,7 +88,25 @@ class PortfolioViewModel(
         }
     }
 
-    private fun updatePortfolioDataState(data: PortfolioData) {
+    private fun updatePortfolioDataState(rawData: PortfolioData) {
+        val nowCal = java.util.Calendar.getInstance()
+        val dayOfWeek = nowCal.get(java.util.Calendar.DAY_OF_WEEK)
+        val isWeekend = (dayOfWeek == java.util.Calendar.SATURDAY || dayOfWeek == java.util.Calendar.SUNDAY)
+
+        val data = if (isWeekend) {
+            rawData.copy(
+                accountSummary = rawData.accountSummary.copy(
+                    dailyPnl = 0.0,
+                    dailyPnlPercentage = 0.0
+                ),
+                positions = rawData.positions.map { pos ->
+                    pos.copy(dailyPnl = 0.0)
+                }
+            )
+        } else {
+            rawData
+        }
+
         val state = _uiState.value
         val (filtered, sectors) = processPositionsAndSectors(
             positions = data.positions,

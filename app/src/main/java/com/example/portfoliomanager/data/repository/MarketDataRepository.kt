@@ -129,7 +129,11 @@ class MarketDataRepositoryImpl(
                         (updatedTotalPnlInTarget / updatedCostBasisTotalInTarget) * 100.0
                     } else pos.pnlPercentage
 
-                    val updatedDailyPnlInTarget = marketData.dailyChange * priceFxToPosCurrency * pos.quantity * currentFxRate
+                    val nowCal = java.util.Calendar.getInstance()
+                    val dayOfWeek = nowCal.get(java.util.Calendar.DAY_OF_WEEK)
+                    val isWeekend = (dayOfWeek == java.util.Calendar.SATURDAY || dayOfWeek == java.util.Calendar.SUNDAY)
+
+                    val updatedDailyPnlInTarget = if (isWeekend) 0.0 else (marketData.dailyChange * priceFxToPosCurrency * pos.quantity * currentFxRate)
 
                     pos.copy(
                         markPrice = liveMarkPriceNative,
@@ -143,7 +147,12 @@ class MarketDataRepositoryImpl(
                 } else {
                     val updatedMarketValueInTarget = pos.marketValue * currentFxRate
                     val updatedTotalPnlInTarget = pos.totalPnl * currentFxRate
-                    val updatedDailyPnlInTarget = pos.dailyPnl * currentFxRate
+
+                    val nowCal = java.util.Calendar.getInstance()
+                    val dayOfWeek = nowCal.get(java.util.Calendar.DAY_OF_WEEK)
+                    val isWeekend = (dayOfWeek == java.util.Calendar.SATURDAY || dayOfWeek == java.util.Calendar.SUNDAY)
+
+                    val updatedDailyPnlInTarget = if (isWeekend) 0.0 else (pos.dailyPnl * currentFxRate)
 
                     pos.copy(
                         marketValue = updatedMarketValueInTarget,
